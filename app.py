@@ -46,6 +46,7 @@ st.title("📈 Invest AI — No‑Code Ticarət Analitikası")
 
 with st.sidebar:
     st.header("⚙️ Parametrlər")
+    
     symbols = st.text_input("Simvollar (vergüllə)", value="AAPL,MSFT,SPY")
     start = st.date_input("Başlanğıc", value=date(2018,1,1))
     end = st.date_input("Son", value=date.today())
@@ -63,6 +64,7 @@ selected_label = st.selectbox(
     list(model_options.keys()),
     index=0
 )
+
 model_map = {
     "⚡ GPT-4o-mini": "gpt-4o-mini",
     "🧠 GPT-4o": "gpt-4o",
