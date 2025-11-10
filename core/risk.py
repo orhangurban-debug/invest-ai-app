@@ -1,16 +1,14 @@
+# core/risk.py
 import math
 
-def position_size(equity: float, entry_price: float, atr: float, per_trade_risk: float,
-                  atr_mult_sl: float = 2.0, max_position_pct: float = 0.2):
-    stop_dist = atr * atr_mult_sl
-    if stop_dist <= 0 or entry_price <= 0:
-        return 0
-    risk_capital = equity * per_trade_risk
-    qty = math.floor(risk_capital / stop_dist)
-    max_qty = math.floor((equity * max_position_pct) / entry_price)
-    return max(0, min(qty, max_qty))
+def position_size(capital: float, risk_per_trade: float, entry: float, stop: float):
+    risk_amt = max(capital * risk_per_trade, 0.0)          # məsələn 0.01 = 1%
+    per_share = max(entry - stop, 0.0001)
+    qty = math.floor(risk_amt / per_share)
+    return max(qty, 0)
 
-def stop_take(entry: float, atr: float, sl_mult: float = 2.0, tp_mult: float = 4.0):
-    sl = entry - sl_mult*atr
-    tp = entry + tp_mult*atr
-    return sl, tp
+def make_trade_plan(price: float, atr: float, atr_mult_sl=2.0, atr_mult_tp=3.0):
+    entry = round(price, 2)
+    sl    = round(price - atr_mult_sl * atr, 2)
+    tp    = round(price + atr_mult_tp * atr, 2)
+    return entry, sl, tp
