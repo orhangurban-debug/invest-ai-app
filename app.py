@@ -1,5 +1,19 @@
 import os, time, json, datetime
+import pandas as pd
+import streamlit as st
+from datetime import date
 
+# --- daxili modul importları (YEKCINS VERZIYA) ---
+from core.data import load_many
+from core.features import add_indicators
+from core.strategy import latest_signal
+from core.risk import position_size, make_trade_plan
+from core.trade_log import append_trade, read_log
+from core.alerts import send_telegram
+
+st.set_page_config(page_title="Invest AI — Secure", layout="wide")
+
+# ---------- Log helper ----------
 def log_action(kind, payload: dict):
     import csv, os, datetime
     os.makedirs("logs", exist_ok=True)
@@ -7,25 +21,11 @@ def log_action(kind, payload: dict):
         w = csv.writer(f)
         w.writerow([datetime.datetime.utcnow().isoformat(), kind, json.dumps(payload, ensure_ascii=False)])
 
-import pandas as pd
-import streamlit as st
-from datetime import date
-
-from core.data import load_ohlc
-from core.features import add_indicators
-from core.modeling import train_model
-from core.strategy import latest_signal
-from core.risk import position_size, make_trade_plan as stop_take
-from core.broker_alpaca import AlpacaBroker
-
-st.set_page_config(page_title="Invest AI — Secure", layout="wide")
-
 # ---------- Basic Auth Gate ----------
 def check_auth():
-    import streamlit as st
     pwd_secret = st.secrets.get("APP_PASSWORD", "")
     if not pwd_secret:
-        return True  # no password set
+        return True
     if "auth_ok" not in st.session_state:
         st.session_state.auth_ok = False
     if st.session_state.auth_ok:
@@ -42,36 +42,84 @@ def check_auth():
 
 check_auth()
 
-st.title("📈 Invest AI — No‑Code Ticarət Analitikası")
+st.title("📈 Invest AI — No-Code Ticarət Analitikası")
 
+# ===================== SIDEBAR =====================
 with st.sidebar:
     st.header("⚙ Parametrlər")
-    symbols = st.text_input("Simvollar (vergüllə)", value="AAPL,MSFT,SPY")
-    start = st.date_input("Başlanğıc", value=date(2018, 1, 1))
-    end = st.date_input("Son", value=date.today())
-    interval = st.selectbox("Interval", ["1d", "1wk", "1mo"], index=0)
-    st.markdown("## 🔎 Live Signals")
 
+    # Tarix və simvollar
+    symbols = st.text_input("Simvollar (vergüllə)", value="AAPL,MSFT,SPY")
+    start   = st.date_input("Başlanğıc", value=date(2018, 1, 1))
+    end     = st.date_input("Son", value=date.today())
+    interval = st.selectbox("Interval", ["1d", "1wk", "1mo"], index=0)
+
+    st.subheader("Strategiya")
+
+    # AI model seçimi (sənin vizual seçimlərinlə)
+    model_options = {
+        "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
+        "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
+        "💎 GPT-5": "Ən güclü və analitik — dərin bazar proqnozları üçün"
+    }
+    selected_label = st.selectbox("AI modelini seçin:", list(model_options.keys()), index=0)
+    model_map = {"⚡ GPT-4o-mini": "gpt-4o-mini", "🧠 GPT-4o": "gpt-4o", "💎 GPT-5": "gpt-5"}
+    openai_model = model_map[selected_label]
+    st.markdown(f"**Aktiv model:** {selected_label}  \n_{model_options[selected_label]}_")
+    st.caption(f"**Aktiv model kodu:** {openai_model}")
+
+    # Bildiriş və hədəflər
+    alert_score_up = st.slider("Alert skoru (↑)", 50, 90, 60, 1)
+    atr_mult_sl    = st.number_input("SL (ATR x)", value=2.0, step=0.5, format="%.1f")
+    atr_mult_tp    = st.number_input("TP (ATR x)", value=3.0, step=0.5, format="%.1f")
+
+    # Texniki parametrlər
+    rsi_low  = st.number_input("RSI aşağı",  value=30, step=1)
+    rsi_high = st.number_input("RSI yuxarı", value=70, step=1)
+    fast_ma  = st.number_input("Sürətli MA", value=10, step=1)
+    slow_ma  = st.number_input("Yavaş MA",   value=50, step=1)
+
+    st.markdown("---")
+    st.subheader("Risk")
+    init_cash     = st.number_input("Başlanğıc kapital", value=100000, step=1000)
+    per_trade_risk = st.number_input("Hər əməliyyat riski", value=0.01, step=0.005, format="%.3f")
+
+# ===================== MAIN: LIVE SIGNALS =====================
+st.markdown("## 🔎 Live Signals")
 run_btn = st.button("🚀 Analizi işə sal")
+
 if run_btn:
-    # Sidebar dəyərləri: symbols, start, end, interval, init_cash, per_trade_risk, atr_mult_sl, atr_mult_tp
+    log_action('run', {'symbols': symbols, 'start': str(start), 'end': str(end), 'interval': interval})
     symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    raw = load_many(symbol_list, str(start), str(end), interval)
+    try:
+        raw = load_many(symbol_list, str(start), str(end), interval)
+    except Exception as e:
+        st.error(f"Data xətası: {e}")
+        raw = {}
 
     rows = []
     for sym, df in raw.items():
         f = add_indicators(df)
         if f.empty:
+            st.warning(f"{sym} üçün məlumat yoxdur.")
             continue
 
         score, action, last = latest_signal(f)
-        entry, sl, tp = make_trade_plan(float(last["close"]), float(last["atr"]),
-                                        atr_mult_sl=atr_mult_sl, atr_mult_tp=atr_mult_tp)
+
+        # ATR sütun adı müxtəlif ola bilər – təhlükəsiz oxu:
+        atr_val = last.get("atr") or last.get("atr14") or last.get("ATR")
+        if atr_val is None:
+            # ehtiyat: ATR tapılmadısa, qiymətin ~2%-ni götür
+            atr_val = float(last["close"]) * 0.02
+
+        entry, sl, tp = make_trade_plan(float(last["close"]), float(atr_val),
+                                        atr_mult_sl=float(atr_mult_sl),
+                                        atr_mult_tp=float(atr_mult_tp))
         qty = position_size(float(init_cash), float(per_trade_risk), entry, sl)
         rr  = round((tp - entry) / max(entry - sl, 0.001), 2)
 
         rows.append({
-            "Symbol": sym, "Score": round(score,1), "Action": action,
+            "Symbol": sym, "Score": round(float(score), 1), "Action": action,
             "Entry": entry, "SL": sl, "TP": tp, "Qty": qty, "R:R": rr
         })
 
@@ -91,111 +139,8 @@ if run_btn:
                     )
             ok = send_telegram("\n".join(msg)) if len(msg) > 1 else False
             st.success("Bildiriş göndərildi ✅" if ok else "Siqnal yoxdur və ya Telegram secrets boşdur ❗️")
-
-    st.subheader("Strategiya")
-
-    # 🌸 AI Model seçimi (vizual)
-    model_options = {
-        "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
-        "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
-        "💎 GPT-5": "Ən güclü və analitik — dərin bazar proqnozları üçün"
-    }
-    selected_label = st.selectbox(
-        "AI modelini seçin:",
-        list(model_options.keys()),
-        index=0
-    )
-    model_map = {
-        "⚡ GPT-4o-mini": "gpt-4o-mini",
-        "🧠 GPT-4o": "gpt-4o",
-        "💎 GPT-5": "gpt-5"
-    }
-    openai_model = model_map[selected_label]
-
-    st.markdown(f"""
-    **Aktiv model:** {selected_label}  
-    _{model_options[selected_label]}_
-    """)
-    st.caption(f"**Aktiv model kodu:** {openai_model}")
-
-    # 🔔 Bildiriş və hədəf parametrləri (YENİ)
-    alert_score_up = st.slider("Alert skoru (↑)", 50, 90, 60, 1)
-    atr_mult_sl    = st.number_input("SL (ATR x)", value=2.0, step=0.5, format="%.1f")
-    atr_mult_tp    = st.number_input("TP (ATR x)", value=3.0, step=0.5, format="%.1f")
-
-    # ⚙ Texniki parametrlər (RSI / MA) — ƏSAS
-    rsi_low  = st.number_input("RSI aşağı",  value=30, step=1)
-    rsi_high = st.number_input("RSI yuxarı", value=70, step=1)
-    fast_ma  = st.number_input("Sürətli MA", value=10, step=1)
-    slow_ma  = st.number_input("Yavaş MA",   value=50, step=1)
-    horizon  = st.number_input("ML üfüqü (gün)", value=5, step=1)
-    test_size = st.slider("Test payı", 0.05, 0.5, 0.2, 0.05)
-
-    st.markdown("---")
-    st.subheader("Risk")
-
-    init_cash = st.number_input("Başlanğıc kapital", value=100000, step=1000)
-    per_trade_risk = st.number_input("Hər əməliyyat riski", value=0.01, step=0.005, format="%.3f")
-    max_pos_pct = st.number_input("Max alət payı", value=0.20, step=0.05, format="%.2f")
-    sl_mult = st.number_input("SL (ATR x)", value=2.0, step=0.5, format="%.2f")
-    tp_mult = st.number_input("TP (ATR x)", value=4.0, step=0.5, format="%.2f")
-    st.markdown("---")
-    paper_trade = st.checkbox("Alpaca ilə paper trade", value=False)
-    run_btn = st.button("🚀 Analizi işə sal")
-
-if run_btn:
-    log_action('run', {'symbols': symbols, 'start': str(start), 'end': str(end)})
-    tickers = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    portfolio_equity = []
-    per_symbol_rows = []
-
-    for sym in tickers:
-        with st.spinner(f"{sym} yüklənir..."):
-            df = load_ohlcv(sym, str(start), str(end), interval=interval)
-            if df.empty:
-                st.warning(f"{sym} üçün məlumat yoxdur.")
-                continue
-
-            df_feat = make_tech_features(df)
-            model, meta = train_model(df_feat, horizon_days=int(horizon), test_size=float(test_size))
-            action, score = generate_signal(df_feat, model, meta,
-                                            rsi_bounds=(int(rsi_low), int(rsi_high)),
-                                            fast_ma=int(fast_ma), slow_ma=int(slow_ma), ml_weight=0.5)
-            price = float(df_feat["Close"].iloc[-1])
-            atr = float(df_feat["atr14"].iloc[-1])
-            qty = 0
-            if action == "BUY":
-                qty = position_size(init_cash, price, atr, per_trade_risk, sl_mult, max_pos_pct)
-            sl, tp = stop_take(price, atr, sl_mult, tp_mult)
-
-            per_symbol_rows.append({
-                "Symbol": sym, "Action": action, "Score": round(float(score),3),
-                "Price": round(price, 4), "ATR": round(atr, 4), "Qty": int(qty),
-                "SL": round(sl, 4), "TP": round(tp, 4), "ModelAcc": round(meta["acc"],3)
-            })
-
-            # Chart
-            tab1, tab2 = st.tabs([f"{sym} Chart", f"{sym} Features"])
-            with tab1:
-                st.line_chart(df["Close"][-300:])
-            with tab2:
-                st.dataframe(df_feat.tail(10))
-
-            # Paper trade
-            if paper_trade and action=="BUY" and qty>0:
-                try:
-                    broker = AlpacaBroker(paper=True)
-                    resp = broker.buy(sym, int(qty)); log_action('order', {'symbol': sym, 'qty': int(qty), 'resp': str(resp)})
-                    st.success(f"Alpaca order göndərildi: {resp.get('id','OK')}")
-                except Exception as e:
-                    st.error(f"Alpaca xətası: {e}")
-
-    if per_symbol_rows:
-        st.subheader("🔎 Siqnallar")
-        st.dataframe(pd.DataFrame(per_symbol_rows))
-        st.info("Qeyd: Bu nəticələr təhsil məqsədlidir. Riskləri özünüz qiymətləndirin.")
 else:
-    st.write("Sol paneldə parametrləri seç və **Analizi işə sal** düyməsinə bas.")
+    st.info("Sol paneldə parametrləri seç və **Analizi işə sal** düyməsinə bas.")
 
 # ---------- In-app Assistant (Chat) ----------
 st.markdown("---")
@@ -219,11 +164,11 @@ if user_msg:
 
     # call OpenAI
     try:
-        import openai, os
+        import openai
         openai.api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", "")
         model = openai_model
         if not openai.api_key:
-            raise RuntimeError("OPENAI_API_KEY yoxdur. Streamlit Secrets-dən əlavə edin.")
+            raise RuntimeError("OPENAI_API_KEY yoxdur. Settings → Secrets bölməsinə əlavə edin.")
         from openai import OpenAI
         client = OpenAI(api_key=openai.api_key)
         resp = client.chat.completions.create(
@@ -238,14 +183,8 @@ if user_msg:
     st.session_state.chat.append({"role":"assistant","content":reply})
     with st.chat_message("assistant"):
         st.markdown(reply)
-import pandas as pd
-from core.data import load_many
-from core.features import add_indicators
-from core.strategy import latest_signal
-from core.risk import make_trade_plan, position_size
-from core.trade_log import append_trade, read_log
-from core.alerts import send_telegram
 
+# ---------- Trade Log ----------
 st.markdown("## 📒 Trade Log")
 log_df = read_log()
 st.dataframe(log_df, use_container_width=True)
@@ -265,4 +204,4 @@ with st.expander("➕ Əməliyyatı jurnala əlavə et"):
             "symbol": sym, "action": act, "entry": entry,
             "sl": sl, "tp": tp, "qty": qty, "score": None, "note": note
         })
-        st.experimental_rerun()
+        st.rerun()
