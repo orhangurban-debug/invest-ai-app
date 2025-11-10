@@ -63,43 +63,17 @@ selected_label = st.selectbox(
     list(model_options.keys()),
     index=0
 )
-openai_model = (
-    selected_label.replace("⚡ ", "")
-    .replace("🧠 ", "")
-    .replace("💎 ", "")
-    .lower()
-)
-
-st.markdown(f"""
-**Aktiv model:** {selected_label}  
-_{model_options[selected_label]}_
-""")
-
-# 🔮 AI Model seçimi (vizual təkmilləşdirilmiş)
-model_options = {
-    "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
-    "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
-    "💎 GPT-5": "Ən güclü və analitik — dərin bazar proqnozları üçün"
+model_map = {
+    "⚡ GPT-4o-mini": "gpt-4o-mini",
+    "🧠 GPT-4o": "gpt-4o",
+    "💎 GPT-5": "gpt-5",
 }
-
-selected_label = st.selectbox(
-    "AI modelini seçin:",
-    list(model_options.keys()),
-    index=0
-)
-
-openai_model = selected_label.split(" ")[1].lower()  # "gpt-4o-mini" kimi çıxarır
+openai_model = model_map[selected_label]
 
 st.markdown(f"""
 **Aktiv model:** {selected_label}  
 _{model_options[selected_label]}_
 """)
-
-    "AI modelini seçin:",
-    ["gpt-4o-mini", "gpt-4o", "gpt-5"],
-    index=0,
-    help="🧠 Model seçimi: GPT-4o-mini (sürətli və ucuz), GPT-4o (balanslı), GPT-5 (ən güclü və analitik)"
-)
 
 st.caption(f"**Aktiv model:** {openai_model}")
 
