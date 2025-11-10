@@ -2,20 +2,30 @@
 import yfinance as yf
 import pandas as pd
 
-def load_ohlc(symbol: str, start: str, end: str, interval: str="1d") -> pd.DataFrame:
-    df = yf.download(symbol, start=start, end=end, interval=interval, auto_adjust=True, progress=False)
-    if df.empty:
+def load_ohlcv(symbol: str, start: str, end: str, interval="1d") -> pd.DataFrame:
+    try:
+        df = yf.download(symbol, start=start, end=end, interval=interval, progress=False)
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        # sütunları standart hala salırıq
+        df = df.rename(columns={
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close",
+            "Adj Close": "close",
+            "Volume": "volume"
+        })
+        df = df.dropna().reset_index()
         return df
-    df = df.rename(columns={"Open":"open","High":"high","Low":"low","Close":"close","Volume":"volume"})
-    return df.dropna().copy()
+    except Exception as e:
+        print(f"⚠️ Data yükləmə xətası ({symbol}): {e}")
+        return pd.DataFrame()
 
 def load_many(symbols, start, end, interval="1d"):
     data = {}
-    for s in symbols:
-        s = s.strip().upper()
-        if not s:
-            continue
-        df = load_ohlc(s, start, end, interval)
-        if not df.empty:
-            data[s] = df
+    for sym in symbols:
+        df = load_ohlcv(sym, start, end, interval)
+        data[sym] = df
     return data
