@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 from datetime import date
 
-from core.data import load_ohlcv = load_ohlc
+from core.data import load_ohlcv=load_ohlc
 from core.features import make_tech_features
 from core.modeling import train_model
 from core.strategy import generate_signal
