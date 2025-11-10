@@ -99,22 +99,28 @@ if run_btn:
 
     rows = []
     for sym, df in raw.items():
+        # ✅ DF yoxlaması
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            st.warning(f"{sym}: məlumat tapılmadı və ya boş DataFrame.")
+            continue
+
         f = add_indicators(df)
         if f.empty:
-            st.warning(f"{sym} üçün məlumat yoxdur.")
+            st.warning(f"{sym}: göstəricilər yaradıla bilmədi (tarix çox qısadır və ya NaN çoxdur).")
             continue
 
         score, action, last = latest_signal(f)
 
-        # ATR sütun adı müxtəlif ola bilər – təhlükəsiz oxu:
+        # ATR təhlükəsiz oxu
         atr_val = last.get("atr") or last.get("atr14") or last.get("ATR")
         if atr_val is None:
-            # ehtiyat: ATR tapılmadısa, qiymətin ~2%-ni götür
-            atr_val = float(last["close"]) * 0.02
+            atr_val = float(last["close"]) * 0.02  # ehtiyat dəyər
 
-        entry, sl, tp = make_trade_plan(float(last["close"]), float(atr_val),
-                                        atr_mult_sl=float(atr_mult_sl),
-                                        atr_mult_tp=float(atr_mult_tp))
+        entry, sl, tp = make_trade_plan(
+            float(last["close"]), float(atr_val),
+            atr_mult_sl=float(atr_mult_sl),
+            atr_mult_tp=float(atr_mult_tp)
+        )
         qty = position_size(float(init_cash), float(per_trade_risk), entry, sl)
         rr  = round((tp - entry) / max(entry - sl, 0.001), 2)
 
@@ -139,8 +145,6 @@ if run_btn:
                     )
             ok = send_telegram("\n".join(msg)) if len(msg) > 1 else False
             st.success("Bildiriş göndərildi ✅" if ok else "Siqnal yoxdur və ya Telegram secrets boşdur ❗️")
-else:
-    st.info("Sol paneldə parametrləri seç və **Analizi işə sal** düyməsinə bas.")
 
 # ---------- In-app Assistant (Chat) ----------
 st.markdown("---")
