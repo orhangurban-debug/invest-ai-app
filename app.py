@@ -245,3 +245,24 @@ from core.strategy import latest_signal
 from core.risk import make_trade_plan, position_size
 from core.trade_log import append_trade, read_log
 from core.alerts import send_telegram
+
+st.markdown("## 📒 Trade Log")
+log_df = read_log()
+st.dataframe(log_df, use_container_width=True)
+
+with st.expander("➕ Əməliyyatı jurnala əlavə et"):
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    sym   = c1.text_input("Symbol")
+    act   = c2.selectbox("Action", ["Buy","Sell","Exit","Adjust SL"])
+    entry = c3.number_input("Entry", value=0.0, step=0.01)
+    sl    = c4.number_input("SL", value=0.0, step=0.01)
+    tp    = c5.number_input("TP", value=0.0, step=0.01)
+    qty   = c6.number_input("Qty", value=0, step=1)
+    note  = st.text_input("Qeyd")
+
+    if st.button("Jurnala yaz"):
+        append_trade({
+            "symbol": sym, "action": act, "entry": entry,
+            "sl": sl, "tp": tp, "qty": qty, "score": None, "note": note
+        })
+        st.experimental_rerun()
