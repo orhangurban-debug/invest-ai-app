@@ -54,25 +54,22 @@ with st.sidebar:
 
     st.subheader("Strategiya")
 
-    # 🌸 AI Model seçimi (vizual təkmilləşdirilmiş)
+    # 🌸 AI Model seçimi (vizual)
     model_options = {
         "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
         "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
         "💎 GPT-5": "Ən güclü və analitik — dərin bazar proqnozları üçün"
     }
-
     selected_label = st.selectbox(
         "AI modelini seçin:",
         list(model_options.keys()),
         index=0
     )
-
     model_map = {
         "⚡ GPT-4o-mini": "gpt-4o-mini",
         "🧠 GPT-4o": "gpt-4o",
         "💎 GPT-5": "gpt-5"
     }
-
     openai_model = model_map[selected_label]
 
     st.markdown(f"""
@@ -81,12 +78,17 @@ with st.sidebar:
     """)
     st.caption(f"**Aktiv model kodu:** {openai_model}")
 
-    # ⚙ RSI və MA parametrləri
-    rsi_low = st.number_input("RSI aşağı", value=30, step=1)
+    # 🔔 Bildiriş və hədəf parametrləri (YENİ)
+    alert_score_up = st.slider("Alert skoru (↑)", 50, 90, 60, 1)
+    atr_mult_sl    = st.number_input("SL (ATR x)", value=2.0, step=0.5, format="%.1f")
+    atr_mult_tp    = st.number_input("TP (ATR x)", value=3.0, step=0.5, format="%.1f")
+
+    # ⚙ Texniki parametrlər (RSI / MA) — ƏSAS
+    rsi_low  = st.number_input("RSI aşağı",  value=30, step=1)
     rsi_high = st.number_input("RSI yuxarı", value=70, step=1)
-    fast_ma = st.number_input("Sürətli MA", value=10, step=1)
-    slow_ma = st.number_input("Yavaş MA", value=50, step=1)
-    horizon = st.number_input("ML üfüqü (gün)", value=5, step=1)
+    fast_ma  = st.number_input("Sürətli MA", value=10, step=1)
+    slow_ma  = st.number_input("Yavaş MA",   value=50, step=1)
+    horizon  = st.number_input("ML üfüqü (gün)", value=5, step=1)
     test_size = st.slider("Test payı", 0.05, 0.5, 0.2, 0.05)
 
     st.markdown("---")
