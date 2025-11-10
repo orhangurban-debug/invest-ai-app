@@ -18,6 +18,7 @@ def load_ohlcv(symbol: str, start: str, end: str, interval="1d") -> pd.DataFrame
             "Volume": "volume"
         })
         df = df.dropna().reset_index()
+        print(f"✅ {symbol} loaded: {df.shape}, columns={list(df.columns)}")
         return df
     except Exception as e:
         print(f"⚠️ Data yükləmə xətası ({symbol}): {e}")
