@@ -1,31 +1,31 @@
+# core/strategy.py
+import numpy as np
 import pandas as pd
-from .modeling import predict_proba
 
-def generate_signal(df_feat: pd.DataFrame, model=None, meta=None, rsi_bounds=(30,70),
-                    fast_ma=10, slow_ma=50, ml_weight=0.5):
-    row = df_feat.iloc[-1:]
-    rsi = float(row["rsi14"].values[0])
-    ma10 = float(row["ma10"].values[0])
-    ma50 = float(row["ma50"].values[0])
-    price = float(row["Close"].values[0])
+def _score_row(r):
+    trend = 0
+    if r["ma_fast"] > r["ma_slow"]: trend += 20
+    if r["adx"] > 20: trend += 10
 
-    tech_long = (rsi < rsi_bounds[0]) or (ma10 > ma50 and price > ma10)
-    tech_short = (rsi > rsi_bounds[1]) or (ma10 < ma50 and price < ma10)
+    momentum = 0
+    if r["rsi"] < 30: momentum += 20
+    elif r["rsi"] > 70: momentum -= 20
+    momentum += np.clip(r.get("roc5", 0.0), -10, 10)
 
-    tech_score = 0.0
-    if tech_long: tech_score += 1.0
-    if tech_short: tech_score -= 1.0
+    vol = 10 if (r["atr"] / r["close"] < 0.03) else 0
 
-    ml_score = 0.0
-    if model is not None and meta is not None and len(meta.get("X_cols", []))>0:
-        last = row[meta["X_cols"]]
-        proba_up = predict_proba(model, last.squeeze())
-        ml_score = (proba_up - 0.5) * 2.0  # -1..+1
+    score = 30 + trend + momentum/2 + vol          # 0–100 aralığına sıxırıq
+    return float(np.clip(score, 0, 100))
 
-    score = (1-ml_weight)*tech_score + ml_weight*ml_score
-    if score > 0.15:
-        return "BUY", score
-    elif score < -0.15:
-        return "SELL", score
-    else:
-        return "HOLD", score
+def classify_action(score: float):
+    if score >= 75: return "Strong Buy"
+    if score >= 60: return "Buy"
+    if score >= 40: return "Hold"
+    if score >= 25: return "Sell"
+    return "Strong Sell"
+
+def latest_signal(df: pd.DataFrame):
+    r = df.iloc[-1]
+    s = _score_row(r)
+    act = classify_action(s)
+    return s, act, r
