@@ -196,3 +196,10 @@ if user_msg:
     st.session_state.chat.append({"role":"assistant","content":reply})
     with st.chat_message("assistant"):
         st.markdown(reply)
+import pandas as pd
+from core.data import load_many
+from core.features import add_indicators
+from core.strategy import latest_signal
+from core.risk import make_trade_plan, position_size
+from core.trade_log import append_trade, read_log
+from core.alerts import send_telegram
