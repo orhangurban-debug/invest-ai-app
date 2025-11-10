@@ -5,30 +5,37 @@ from ta.momentum import RSIIndicator
 from ta.trend import SMAIndicator, ADXIndicator
 from ta.volatility import AverageTrueRange, BollingerBands
 
-def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
+def add_indicators(df) -> pd.DataFrame:
     """
-    RSI, MA(10/50), ADX, ATR, Bollinger və ROC5 əlavə edir.
-    NaN/inf və sütun adları problemlərinə qarşı dayanıqlıdır.
+    RSI, MA, ADX, ATR, Bollinger və ROC5 əlavə edir.
+    DataFrame yoxlaması və NaN/inf təmizləməsi əlavə olunub.
     """
+    # ✅ 1. Əgər DataFrame deyilsə, boş DataFrame qaytar
+    if not isinstance(df, pd.DataFrame):
+        print("⚠️ Xəbərdarlıq: add_indicators() səhv tipdə input aldı:", type(df))
+        return pd.DataFrame()
+
     x = df.copy()
 
-    # Sütun adlarını kiçilt (Close→close və s.)
-    x.columns = [c.lower() for c in x.columns]
+    # ✅ 2. Əgər DataFrame boşdursa
+    if x.empty or len(x.columns) == 0:
+        print("⚠️ Xəbərdarlıq: add_indicators() boş DataFrame aldı")
+        return pd.DataFrame()
 
-    # Lazımi sütunlar
+    # ✅ 3. Sütun adlarını kiçilt
+    x.columns = [str(c).lower().strip() for c in x.columns]
+
+    # Lazımi sütunlar yoxdursa
     for col in ["close", "high", "low"]:
         if col not in x.columns:
             raise ValueError(f"'{col}' sütunu tapılmadı (mövcud: {list(x.columns)})")
 
-    # Rəqəmsallaşdır, NaN/inf təmizlə
+    # NaN və inf təmizlənməsi
     x = x.replace([np.inf, -np.inf], np.nan)
-    for col in ["close", "high", "low"]:
-        x[col] = pd.to_numeric(x[col], errors="coerce")
     x = x.dropna(subset=["close", "high", "low"])
 
-    # Qısa tarixçə olduqda göstəricilər yarana bilməz
-    if len(x) < 60:  # MA50/BB20 üçün ehtiyat hədd
-        return pd.DataFrame(columns=list(df.columns) + [
+    if len(x) < 60:
+        return pd.DataFrame(columns=list(x.columns) + [
             "rsi","ma_fast","ma_slow","adx","atr","bb_up","bb_dn","roc5"
         ])
 
@@ -56,7 +63,7 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     except Exception:
         x["atr"] = np.nan
 
-    # Bollinger
+    # Bollinger Bands
     try:
         bb = BollingerBands(x["close"], window=20, window_dev=2)
         x["bb_up"] = bb.bollinger_hband()
@@ -68,6 +75,4 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # ROC5
     x["roc5"] = x["close"].pct_change(5) * 100
 
-    # Son təmizləmə
-    x = x.dropna().reset_index(drop=True)
-    return x
+    return x.dropna().reset_index(drop=True)
