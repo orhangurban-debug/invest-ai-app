@@ -49,10 +49,60 @@ with st.sidebar:
     symbols = st.text_input("Simvollar (vergüllə)", value="AAPL,MSFT,SPY")
     start = st.date_input("Başlanğıc", value=date(2018,1,1))
     end = st.date_input("Son", value=date.today())
-    interval = st.selectbox("Interval", ["1d","1wk","1mo"], index=0)
-    st.markdown("---")
     st.subheader("Strategiya")
-    openai_model = st.text_input("Chat modeli (OPENAI_MODEL)", value=st.secrets.get("OPENAI_MODEL","gpt-4o-mini"))
+
+# 🔮 AI Model seçimi (vizual təkmilləşdirilmiş)
+model_options = {
+    "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
+    "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
+    "💎 GPT-5": "Ən güclü və analitik — dərin bazar proqnozları üçün"
+}
+
+selected_label = st.selectbox(
+    "AI modelini seçin:",
+    list(model_options.keys()),
+    index=0
+)
+openai_model = (
+    selected_label.replace("⚡ ", "")
+    .replace("🧠 ", "")
+    .replace("💎 ", "")
+    .lower()
+)
+
+st.markdown(f"""
+**Aktiv model:** {selected_label}  
+_{model_options[selected_label]}_
+""")
+
+# 🔮 AI Model seçimi (vizual təkmilləşdirilmiş)
+model_options = {
+    "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
+    "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
+    "💎 GPT-5": "Ən güclü və analitik — dərin bazar proqnozları üçün"
+}
+
+selected_label = st.selectbox(
+    "AI modelini seçin:",
+    list(model_options.keys()),
+    index=0
+)
+
+openai_model = selected_label.split(" ")[1].lower()  # "gpt-4o-mini" kimi çıxarır
+
+st.markdown(f"""
+**Aktiv model:** {selected_label}  
+_{model_options[selected_label]}_
+""")
+
+    "AI modelini seçin:",
+    ["gpt-4o-mini", "gpt-4o", "gpt-5"],
+    index=0,
+    help="🧠 Model seçimi: GPT-4o-mini (sürətli və ucuz), GPT-4o (balanslı), GPT-5 (ən güclü və analitik)"
+)
+
+st.caption(f"**Aktiv model:** {openai_model}")
+
     rsi_low = st.number_input("RSI aşağı", value=30, step=1)
     rsi_high = st.number_input("RSI yuxarı", value=70, step=1)
     fast_ma = st.number_input("Sürətli MA", value=10, step=1)
