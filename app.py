@@ -35,7 +35,7 @@ def check_auth():
     if st.button("Daxil ol"):
         if pwd == pwd_secret:
             st.session_state.auth_ok = True
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Şifrə yanlışdır.")
     st.stop()
