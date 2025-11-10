@@ -15,7 +15,7 @@ from core.data import load_ohlc
 from core.features import add_indicators
 from core.modeling import train_model
 from core.strategy import latest_signal
-from core.risk import position_size, stop_take
+from core.risk import position_size, make_trade_plan as stop_take
 from core.broker_alpaca import AlpacaBroker
 
 st.set_page_config(page_title="Invest AI — Secure", layout="wide")
