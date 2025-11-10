@@ -50,7 +50,47 @@ with st.sidebar:
     start = st.date_input("Başlanğıc", value=date(2018, 1, 1))
     end = st.date_input("Son", value=date.today())
     interval = st.selectbox("Interval", ["1d", "1wk", "1mo"], index=0)
-    st.markdown("---")
+    st.markdown("## 🔎 Live Signals")
+
+run_btn = st.button("🚀 Analizi işə sal")
+if run_btn:
+    # Sidebar dəyərləri: symbols, start, end, interval, init_cash, per_trade_risk, atr_mult_sl, atr_mult_tp
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    raw = load_many(symbol_list, str(start), str(end), interval)
+
+    rows = []
+    for sym, df in raw.items():
+        f = add_indicators(df)
+        if f.empty:
+            continue
+
+        score, action, last = latest_signal(f)
+        entry, sl, tp = make_trade_plan(float(last["close"]), float(last["atr"]),
+                                        atr_mult_sl=atr_mult_sl, atr_mult_tp=atr_mult_tp)
+        qty = position_size(float(init_cash), float(per_trade_risk), entry, sl)
+        rr  = round((tp - entry) / max(entry - sl, 0.001), 2)
+
+        rows.append({
+            "Symbol": sym, "Score": round(score,1), "Action": action,
+            "Entry": entry, "SL": sl, "TP": tp, "Qty": qty, "R:R": rr
+        })
+
+    if not rows:
+        st.warning("Analiz üçün məlumat tapılmadı.")
+    else:
+        df_signals = pd.DataFrame(rows).sort_values("Score", ascending=False)
+        st.dataframe(df_signals, use_container_width=True)
+
+        if st.button("🔔 Telegram (Score ≥ seçilmiş hədd)"):
+            msg = ["<b>Live Signals</b>"]
+            for r in rows:
+                if r["Score"] >= alert_score_up:
+                    msg.append(
+                        f"{r['Symbol']}: <b>{r['Action']}</b> | {r['Entry']} / SL {r['SL']} / TP {r['TP']} | "
+                        f"Qty {r['Qty']} | Score {r['Score']} | R:R {r['R:R']}"
+                    )
+            ok = send_telegram("\n".join(msg)) if len(msg) > 1 else False
+            st.success("Bildiriş göndərildi ✅" if ok else "Siqnal yoxdur və ya Telegram secrets boşdur ❗️")
 
     st.subheader("Strategiya")
 
