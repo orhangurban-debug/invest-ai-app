@@ -45,48 +45,53 @@ check_auth()
 st.title("📈 Invest AI — No‑Code Ticarət Analitikası")
 
 with st.sidebar:
-    st.header("⚙️ Parametrlər")
-    
+    st.header("⚙ Parametrlər")
     symbols = st.text_input("Simvollar (vergüllə)", value="AAPL,MSFT,SPY")
-    start = st.date_input("Başlanğıc", value=date(2018,1,1))
+    start = st.date_input("Başlanğıc", value=date(2018, 1, 1))
     end = st.date_input("Son", value=date.today())
+    interval = st.selectbox("Interval", ["1d", "1wk", "1mo"], index=0)
+    st.markdown("---")
+
     st.subheader("Strategiya")
 
-# 🔮 AI Model seçimi (vizual təkmilləşdirilmiş)
-model_options = {
-    "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
-    "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
-    "💎 GPT-5": "Ən güclü və analitik — dərin bazar proqnozları üçün"
-}
+    # 🌸 AI Model seçimi (vizual təkmilləşdirilmiş)
+    model_options = {
+        "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
+        "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
+        "💎 GPT-5": "Ən güclü və analitik — dərin bazar proqnozları üçün"
+    }
 
-selected_label = st.selectbox(
-    "AI modelini seçin:",
-    list(model_options.keys()),
-    index=0
-)
+    selected_label = st.selectbox(
+        "AI modelini seçin:",
+        list(model_options.keys()),
+        index=0
+    )
 
-model_map = {
-    "⚡ GPT-4o-mini": "gpt-4o-mini",
-    "🧠 GPT-4o": "gpt-4o",
-    "💎 GPT-5": "gpt-5",
-}
-openai_model = model_map[selected_label]
+    model_map = {
+        "⚡ GPT-4o-mini": "gpt-4o-mini",
+        "🧠 GPT-4o": "gpt-4o",
+        "💎 GPT-5": "gpt-5"
+    }
 
-st.markdown(f"""
-**Aktiv model:** {selected_label}  
-_{model_options[selected_label]}_
-""")
+    openai_model = model_map[selected_label]
 
-st.caption(f"**Aktiv model:** {openai_model}")
+    st.markdown(f"""
+    **Aktiv model:** {selected_label}  
+    _{model_options[selected_label]}_
+    """)
+    st.caption(f"**Aktiv model kodu:** {openai_model}")
 
+    # ⚙ RSI və MA parametrləri
     rsi_low = st.number_input("RSI aşağı", value=30, step=1)
     rsi_high = st.number_input("RSI yuxarı", value=70, step=1)
     fast_ma = st.number_input("Sürətli MA", value=10, step=1)
     slow_ma = st.number_input("Yavaş MA", value=50, step=1)
     horizon = st.number_input("ML üfüqü (gün)", value=5, step=1)
     test_size = st.slider("Test payı", 0.05, 0.5, 0.2, 0.05)
+
     st.markdown("---")
     st.subheader("Risk")
+
     init_cash = st.number_input("Başlanğıc kapital", value=100000, step=1000)
     per_trade_risk = st.number_input("Hər əməliyyat riski", value=0.01, step=0.005, format="%.3f")
     max_pos_pct = st.number_input("Max alət payı", value=0.20, step=0.05, format="%.2f")
