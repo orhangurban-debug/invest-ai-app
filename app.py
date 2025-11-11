@@ -198,7 +198,7 @@ if run_btn:
             atr_mult_sl=float(atr_mult_sl),
             atr_mult_tp=float(atr_mult_tp)
         )
-        qty = position_size(float(init_cash), float(per_trade_risk), entry, sl)
+        qty = position_size(entry, sl, float(init_cash), float(per_trade_risk))
         rr  = round((tp - entry) / max(entry - sl, 0.001), 2)
 
         rows.append({
