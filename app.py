@@ -16,6 +16,8 @@ from core.strategy import latest_signal
 from core.risk import position_size, make_trade_plan
 from core.trade_log import append_trade, read_log
 from core.alerts import send_telegram
+from core.charts import price_chart
+from openai import OpenAI  # AI şərh üçün
 
 st.set_page_config(page_title="Invest AI — Secure", layout="wide")
 
