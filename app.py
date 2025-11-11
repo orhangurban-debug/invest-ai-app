@@ -418,6 +418,140 @@ if run_btn:
 
 else:
     st.info("Sol paneldə parametrləri seç və **Analizi işə sal** düyməsinə bas.")
+    
+# === REAL-TIME MONITOR & PERFORMANCE (paste after Telegram block) =====================
+st.markdown("---")
+with st.expander("📡 Real-time Monitor & Performance", expanded=False):
+
+    # -------- helpers --------
+    def _ensure_raw_for_monitor():
+        """Monitor işləsin deyə data olsun: varsa 'raw' istifadə et, yoxdursa minimal yüklə."""
+        try:
+            return raw  # noqa: F821  # 'raw' varsa (yuxarıda analizi işə salmısınızsa) onu istifadə edir
+        except NameError:
+            # minimal snapshot (son 2 il), yalnız monitor üçün
+            end_dt = date.today()
+            start_dt = date(end_dt.year - 2, end_dt.month, end_dt.day)
+            syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+            try:
+                return cached_load_many(syms, str(start_dt), str(end_dt), interval)
+            except Exception:
+                return {}
+
+    def _last_close(df_: pd.DataFrame) -> float:
+        if not isinstance(df_, pd.DataFrame) or df_.empty:
+            return float("nan")
+        # close sütunu həm 'close', həm də 'Close' ola bilər – hər ikisini yoxlayırıq
+        for c in ("close", "Close"):
+            if c in df_.columns:
+                return float(pd.to_numeric(df_[c], errors="coerce").dropna().iloc[-1])
+        return float("nan")
+
+    def _mk_positions_from_log(_log: pd.DataFrame) -> pd.DataFrame:
+        """
+        Trade Log-a əsasən sadə mövqe xülasəsi:
+        - Buy -> +qty, Sell -> -qty
+        - Weighted avg cost hesablanır
+        """
+        if _log is None or _log.empty:
+            return pd.DataFrame(columns=["symbol", "qty", "avg_cost"])
+        x = _log.copy()
+        x["qty"] = pd.to_numeric(x["qty"], errors="coerce").fillna(0).astype(float)
+        x["entry"] = pd.to_numeric(x["entry"], errors="coerce").fillna(0).astype(float)
+        x["side"] = x["action"].str.lower().map({"buy": 1, "sell": -1}).fillna(0)
+
+        rows = []
+        for sym, g in x.groupby("symbol"):
+            buys  = g[g["side"] == 1]
+            sells = g[g["side"] == -1]
+            qty   = float((buys["qty"].sum() - sells["qty"].sum()))
+            if qty <= 0:
+                continue
+            # weighted avg cost yalnız buy-lardan
+            if buys.empty:
+                avg_cost = 0.0
+            else:
+                cost = (buys["qty"] * buys["entry"]).sum()
+                avg_cost = float(cost / max(buys["qty"].sum(), 1e-9))
+            rows.append({"symbol": sym, "qty": qty, "avg_cost": avg_cost})
+        return pd.DataFrame(rows)
+
+    # -------- load data for monitor --------
+    mon_raw = _ensure_raw_for_monitor()
+    log_df  = read_log()
+
+    # canlı qiymətlər
+    prices = {s: _last_close(df_) for s, df_ in (mon_raw or {}).items()}
+
+    # mövqelər
+    pos_df = _mk_positions_from_log(log_df)
+
+    # PnL hesabı
+    pnl_rows = []
+    total_unrl = 0.0
+    for _, r in pos_df.iterrows():
+        sym = r["symbol"]
+        qty = float(r["qty"])
+        avg = float(r["avg_cost"])
+        last = float(prices.get(sym, float("nan")))
+        if not pd.isna(last) and qty > 0:
+            unrl = (last - avg) * qty
+            total_unrl += unrl
+            pnl_rows.append({
+                "Symbol": sym,
+                "Qty": int(qty),
+                "Avg cost": round(avg, 4),
+                "Last": round(last, 4),
+                "Unrealized PnL ($)": round(unrl, 2),
+                "Unrealized PnL (%)": round(((last / avg) - 1.0) * 100.0, 2) if avg > 0 else 0.0
+            })
+
+    pnl_df = pd.DataFrame(pnl_rows)
+
+    # təxmini sərbəst nağd: sidebar-dakı init_cash minus mövcud mövqelərin dəyəri
+    invested_val = 0.0
+    for _, r in pos_df.iterrows():
+        invested_val += float(r["qty"]) * float(r["avg_cost"])
+    try:
+        free_cash = float(init_cash) - invested_val  # init_cash sidebar-dandır
+    except Exception:
+        free_cash = float("nan")
+
+    # -------- UI --------
+    c1, c2, c3 = st.columns(3)
+    c1.metric("💰 Free cash (approx.)", f"${free_cash:,.0f}")
+    c2.metric("📈 Unrealized PnL", f"${total_unrl:,.0f}")
+    c3.metric("🧾 Open positions", f"{len(pnl_df)}")
+
+    if not pnl_df.empty:
+        st.dataframe(pnl_df.sort_values("Unrealized PnL ($)", ascending=False), use_container_width=True)
+    else:
+        st.info("Açıq mövqe tapılmadı. Mövqelər `Trade Log` vasitəsilə yaranır (Buy/Sell).")
+
+    # mini live-chart: ilk simvol üçün son 200 şam (əgər data var)
+    try:
+        first_sym = None
+        if isinstance(mon_raw, dict) and mon_raw:
+            first_sym = next(iter(mon_raw.keys()))
+        if first_sym:
+            df_raw = mon_raw[first_sym]
+            if isinstance(df_raw, pd.DataFrame) and not df_raw.empty:
+                st.plotly_chart(price_chart(df_raw.tail(200), title=f"{first_sym} — last 200 candles"),
+                                use_container_width=True)
+    except Exception:
+        pass
+
+    # -------- Auto-refresh (sidebar parametrindən) --------
+    try:
+        if 'auto_refresh' in locals() and auto_refresh:
+            import time
+            st.caption(f"♻️ Auto-refresh aktivdir — {int(refresh_sec)} saniyədən bir yenilənəcək.")
+            time.sleep(int(refresh_sec))
+            st.rerun()
+    except Exception:
+        # auto-refresh olmasa da səhifə normal işləsin
+        pass
+# ================================================================================
 
 # ================== IN-APP CHAT ==================
 st.markdown("---")
