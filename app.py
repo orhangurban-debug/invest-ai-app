@@ -553,6 +553,120 @@ with st.expander("📡 Real-time Monitor & Performance", expanded=False):
         pass
 # ================================================================================
 
+# === AI-TRIGGERED TELEGRAM ALERTS (paste after Real-time Monitor block) =================
+st.markdown("---")
+with st.expander("🤖 AI Alert System — Auto Trigger", expanded=False):
+
+    # Parametrlər sidebar-dan gəlir:
+    # enable_tg_alerts, alert_prob_th, alert_er_th, alert_score_th,
+    # ai_explain_alert, alert_cooldown_m
+    if not enable_tg_alerts:
+        st.info("Telegram Alerts deaktivdir — sidebar-dan 'Telegram Alerts aktiv' işarələyin.")
+    else:
+        try:
+            # 1) Məlumatların hazır olması (raw/df_signals/ai_forecast üçün)
+            if 'df_signals' not in locals() or df_signals.empty:
+                st.warning("Alert üçün siqnal cədvəli tapılmadı. Öncə 'Analizi işə sal' düyməsinə basın.")
+            else:
+                triggers = []     # UI göstərmək üçün
+                alert_lines = []  # Telegram mətni
+                ai_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", "")
+                client = OpenAI(api_key=ai_key) if (ai_explain_alert and ai_key) else None
+
+                # 2) Hər simvol üzrə ML + texniki yoxlama
+                for _, row in df_signals.iterrows():
+                    sym   = row["Symbol"]
+                    score = float(row["Score"])
+                    dfraw = (raw or {}).get(sym) if 'raw' in locals() else None
+                    if not isinstance(dfraw, pd.DataFrame) or dfraw.empty:
+                        continue
+
+                    fx = ai_forecast(
+                        dfraw,
+                        horizon_days=int(horizon_days),
+                        model_type=ml_model_type
+                    )
+                    prob_up = fx["prob_up"] * 100.0
+                    exp_ret = fx["expected_return"] * 100.0
+                    reco    = fx["recommendation"]
+                    acc     = fx["acc"] * 100.0
+
+                    # 3) Trigger şərtləri
+                    cond_prob  = (prob_up >= float(alert_prob_th))
+                    cond_er    = (exp_ret >= float(alert_er_th))
+                    cond_score = (score  >= float(alert_score_th))
+
+                    if cond_prob and cond_er and cond_score:
+                        # rate limit (cooldown) – eyni simvol üçün təkrarlamayaq
+                        if _rate_limit_ok(sym, int(alert_cooldown_m)):
+                            # (i) Telegram mətni
+                            line = (f"⚠️ <b>{sym}</b> — <i>Auto Alert</i>\n"
+                                    f"Recommendation: <b>{reco}</b>\n"
+                                    f"Prob↑: {prob_up:.1f}%  |  ExpRet: {exp_ret:.2f}%  |  Score: {score:.0f}  |  Acc: {acc:.1f}%")
+                            # (ii) AI qısa şərh (opsional)
+                            if client:
+                                try:
+                                    brief = (
+                                        f"Symbol: {sym}\nProbUp: {prob_up:.1f}%  ExpRet: {exp_ret:.2f}%  "
+                                        f"TechScore: {score:.0f}  ModelAcc: {acc:.1f}%  Horizon(d): {int(horizon_days)}\n"
+                                        f"TL;DR: 2 cümləlik icmal və 1 cümləlik risk xəbərdarlığı ver."
+                                    )
+                                    resp = client.chat.completions.create(
+                                        model=openai_model,
+                                        temperature=0.2,
+                                        messages=[
+                                            {"role":"system","content":"Təcrübəli risk yönümlü treyder kimi çox qısa və konkret izah ver. MALİYYƏ MƏSLƏHƏTİ DEYİL."},
+                                            {"role":"user","content": brief}
+                                        ]
+                                    )
+                                    ai_text = resp.choices[0].message.content.strip()
+                                    line += f"\n\n{ai_text}"
+                                except Exception as e:
+                                    st.warning(f"AI şərh alınmadı: {e}")
+
+                            alert_lines.append(line)
+                            triggers.append({
+                                "Symbol": sym,
+                                "Prob↑(%)": round(prob_up,1),
+                                "ExpRet(%)": round(exp_ret,2),
+                                "Score": round(score,1),
+                                "Reco": reco,
+                                "ModelAcc(%)": round(acc,1),
+                                "Status": "TRIGGERED ✅"
+                            })
+                            # Log-a yaz
+                            _log_alert({"symbol": sym, "prob_up": prob_up, "exp_ret": exp_ret,
+                                        "score": score, "reco": reco, "ts": datetime.datetime.utcnow().isoformat()})
+                        else:
+                            triggers.append({
+                                "Symbol": sym, "Status": f"cooldown {int(alert_cooldown_m)} dəq ⏳"
+                            })
+                    else:
+                        triggers.append({
+                            "Symbol": sym,
+                            "Prob↑(%)": round(prob_up,1),
+                            "ExpRet(%)": round(exp_ret,2),
+                            "Score": round(score,1),
+                            "Status": "no trigger"
+                        })
+
+                # 4) UI: hansı simvolların keçdiyini göstər
+                if triggers:
+                    st.dataframe(pd.DataFrame(triggers), use_container_width=True)
+
+                # 5) Telegram-a göndər
+                if alert_lines:
+                    text = "<b>AI Auto Alerts</b>\n" + "\n\n".join(alert_lines)
+                    ok = send_telegram(text)
+                    st.success("Telegram göndərildi ✅" if ok else "Telegram göndərilə bilmədi ❗️")
+                    if not ok:
+                        st.caption("Bot token / chat_id secrets bölməsində düzgün deyil.")
+                else:
+                    st.info("Bu dəfə şərtləri keçən siqnal yoxdur.")
+        except Exception as e:
+            st.error(f"AI Alert xətası: {e}")
+# =======================================================================================
+
 # ================== IN-APP CHAT ==================
 st.markdown("---")
 st.header("🤝 Daxili köməkçi (Chat)")
