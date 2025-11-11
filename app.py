@@ -14,12 +14,10 @@ from core.alerts import send_telegram
 from core.charts import price_chart
 from core.backtest import run_backtest
 from openai import OpenAI
-from core.ml_model import train_model
-from core.predictor import ai_forecast
+from core.predictor import ai_forecast  # ML proqnoz üçün
 
 # ---- Səhifə konfiqurasiyası ----
 st.set_page_config(page_title="Invest AI — Secure", layout="wide")
-
 
 # ================== CACHE-Lİ YÜKLƏMƏ ==================
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -27,7 +25,6 @@ def cached_load_many(symbol_list, start, end, interval):
     # Qəsdən içəridə import — Streamlit cache üçün sabit işləyir
     from core.data import load_many as _load_many
     return _load_many(symbol_list, start, end, interval)
-
 
 # ================== LOG HELPER ==================
 def log_action(kind: str, payload: dict):
@@ -40,7 +37,6 @@ def log_action(kind: str, payload: dict):
             kind,
             json.dumps(payload, ensure_ascii=False)
         ])
-
 
 # ================== BASIC AUTH ==================
 def check_auth():
@@ -62,11 +58,9 @@ def check_auth():
             st.error("Şifrə yanlışdır.")
     st.stop()
 
-
 # ================== UI: BAŞLIQ ==================
 check_auth()
 st.title("📈 Invest AI — No-Code Ticarət Analitikası")
-
 
 # ================== SIDEBAR ==================
 with st.sidebar:
@@ -109,6 +103,10 @@ with st.sidebar:
     init_cash      = st.number_input("Başlanğıc kapital", value=100000, step=1000)
     per_trade_risk = st.number_input("Hər əməliyyat riski", value=0.01, step=0.005, format="%.3f")
 
+    st.markdown("---")
+    st.subheader("ML Forecast parametrləri")
+    horizon_days   = st.slider("Proqnoz üfüqü (gün)", 3, 20, 5, 1)
+    ml_model_type  = st.selectbox("ML model növü", ["xgb", "rf"], index=0)
 
 # ================== MAIN: LIVE SIGNALS ==================
 st.markdown("## 🔎 Live Signals")
@@ -162,6 +160,39 @@ if run_btn:
     else:
         df_signals = pd.DataFrame(rows).sort_values("Score", ascending=False)
         st.dataframe(df_signals, use_container_width=True)
+
+        # --- AI FORECAST (ML model ilə) ---
+        with st.expander("🤖 AI Forecast (Expected Return & Recommendation)", expanded=False):
+            try:
+                rows_fx = []
+                for sym in df_signals["Symbol"]:
+                    df_raw = raw.get(sym)
+                    if not isinstance(df_raw, pd.DataFrame) or df_raw.empty:
+                        continue
+                    # ML proqnoz
+                    fx = ai_forecast(
+                        df_raw,
+                        horizon_days=int(horizon_days),
+                        model_type=ml_model_type
+                    )
+                    prob = round(fx["prob_up"] * 100, 1)
+                    eret = round(fx["expected_return"] * 100, 2)
+                    rows_fx.append({
+                        "Symbol": sym,
+                        "Horizon(d)": int(horizon_days),
+                        "Prob↑(%)": prob,
+                        "ExpRet(%)": eret,
+                        "Model Acc": round(fx["acc"] * 100, 1),
+                        "Recommendation": fx["recommendation"]
+                    })
+                if rows_fx:
+                    st.dataframe(pd.DataFrame(rows_fx).sort_values("ExpRet(%)", ascending=False),
+                                 use_container_width=True)
+                    st.caption("Qeyd: Proqnozlar təhsil məqsədlidir; real investisiya qərarı üçün deyil.")
+                else:
+                    st.info("Forecast üçün yetərli məlumat yoxdur.")
+            except Exception as e:
+                st.error(f"Forecast xətası: {e}")
 
         # --- AI ŞƏRHİ (TOP 2) ---
         with st.expander("💬 AI Şərh (Top 2 siqnal üçün qısa izah)", expanded=False):
@@ -241,7 +272,6 @@ if run_btn:
 else:
     st.info("Sol paneldə parametrləri seç və **Analizi işə sal** düyməsinə bas.")
 
-
 # ================== IN-APP CHAT ==================
 st.markdown("---")
 st.header("🤝 Daxili köməkçi (Chat)")
@@ -283,7 +313,6 @@ if user_msg:
     st.session_state.chat.append({"role": "assistant", "content": reply})
     with st.chat_message("assistant"):
         st.markdown(reply)
-
 
 # ================== TRADE LOG ==================
 st.markdown("## 📒 Trade Log")
