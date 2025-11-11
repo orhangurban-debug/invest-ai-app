@@ -144,6 +144,45 @@ if run_btn:
     else:
         df_signals = pd.DataFrame(rows).sort_values("Score", ascending=False)
         st.dataframe(df_signals, use_container_width=True)
+        # --- AI ŞƏRHİ (TOP N sətr üçün) ---
+        with st.expander("💬 AI Şərh (Top 2 siqnal üçün qısa izah)", expanded=False):
+            top_n = min(2, len(df_signals))
+            ai_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", "")
+            if not ai_key:
+                st.info("OPENAI_API_KEY yoxdur — Settings → Secrets bölməsinə əlavə et.")
+            else:
+                client = Client = OpenAI(api_key=ai_key)
+                for i in range(top_n):
+                    row = df_signals.iloc[i]
+                    sym = row["Symbol"]
+                    summary = (
+                        f"Symbol: {sym}\n"
+                        f"Action: {row['Action']}, Score: {row['Score']}\n"
+                        f"Entry: {row['Entry']}, SL: {row['SL']}, TP: {row['TP']}, R:R: {row['R:R']}\n"
+                        f"Risk: per_trade_risk={per_trade_risk}, init_cash={init_cash}\n"
+                        f"Texniki param: RSI[{rsi_low},{rsi_high}], MA(fast={fast_ma}, slow={slow_ma})"
+                    )
+                    if st.button(f"AI şərh yaz — {sym}", key=f"explain_{sym}_{i}"):
+                        try:
+                            resp = client.chat.completions.create(
+                                model=openai_model,
+                                temperature=0.2,
+                                messages=[
+                                    {"role":"system","content":"Sən təcrübəli portfel meneceri kimi qısa, konkret və risk yönümlü şərh ver. FİNANS MƏSLƏHƏTİ DEYİL."},
+                                    {"role":"user","content": f"Bu siqnalı izah et və 3 cümləlik fəaliyyət planı ver:\n{summary}"}
+                                ]
+                            )
+                            st.markdown(resp.choices[0].message.content)
+                        except Exception as e:
+                            st.error(f"AI xətası: {e}")
+
+        # --- QRAFİK (TOP 2 üçün) ---
+        with st.expander("📈 Qrafik (Top 2 siqnal)", expanded=False):
+            top_syms = list(df_signals["Symbol"].head(2).values)
+            for sym in top_syms:
+                df_raw = raw.get(sym)
+                if isinstance(df_raw, pd.DataFrame) and not df_raw.empty:
+                    st.plotly_chart(price_chart(df_raw, title=sym), use_container_width=True)
 
         if st.button("🔔 Telegram (Score ≥ seçilmiş hədd)"):
             msg = ["<b>Live Signals</b>"]
