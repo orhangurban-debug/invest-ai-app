@@ -14,6 +14,8 @@ from core.alerts import send_telegram
 from core.charts import price_chart
 from core.backtest import run_backtest
 from openai import OpenAI
+from core.ml_model import train_model
+from core.predictor import ai_forecast
 
 # ---- Səhifə konfiqurasiyası ----
 st.set_page_config(page_title="Invest AI — Secure", layout="wide")
