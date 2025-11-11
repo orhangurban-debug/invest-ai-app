@@ -3,12 +3,14 @@ import pandas as pd
 import streamlit as st
 from datetime import date
 
+# ================== CACHE-LI DATA YUKLEME ==================
+# Qeyd: load_many importdan sonra evaluate olunur; çağırış zamanı mövcud olacaq.
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_load_many(symbol_list, start, end, interval):
+    from core.data import load_many
     return load_many(symbol_list, start, end, interval)
 
 # --- daxili modul importları (YEKCINS VERZIYA) ---
-from core.data import load_many
 from core.features import add_indicators
 from core.strategy import latest_signal
 from core.risk import position_size, make_trade_plan
@@ -54,13 +56,13 @@ with st.sidebar:
 
     # Tarix və simvollar
     symbols = st.text_input("Simvollar (vergüllə)", value="AAPL,MSFT,SPY")
-    start   = st.date_input("Başlanğıc", value=date(2018, 1, 1))
+    start   = st.date_input("Başlanğıc", value=date(2020, 1, 1))
     end     = st.date_input("Son", value=date.today())
     interval = st.selectbox("Interval", ["1d", "1wk", "1mo"], index=0)
 
     st.subheader("Strategiya")
 
-    # AI model seçimi (sənin vizual seçimlərinlə)
+    # AI model seçimi
     model_options = {
         "⚡ GPT-4o-mini": "Sürətli və ucuz — qısa analizlər üçün ideal",
         "🧠 GPT-4o": "Balanslı və etibarlı — orta səviyyəli strategiyalar üçün",
@@ -85,7 +87,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Risk")
-    init_cash     = st.number_input("Başlanğıc kapital", value=100000, step=1000)
+    init_cash      = st.number_input("Başlanğıc kapital", value=100000, step=1000)
     per_trade_risk = st.number_input("Hər əməliyyat riski", value=0.01, step=0.005, format="%.3f")
 
 # ===================== MAIN: LIVE SIGNALS =====================
@@ -95,15 +97,17 @@ run_btn = st.button("🚀 Analizi işə sal")
 if run_btn:
     log_action('run', {'symbols': symbols, 'start': str(start), 'end': str(end), 'interval': interval})
     symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+
+    # Data yükləmə (cache-lə)
     try:
-        raw = load_many(symbol_list, str(start), str(end), interval)
+        raw = cached_load_many(symbol_list, str(start), str(end), interval)
     except Exception as e:
         st.error(f"Data xətası: {e}")
         raw = {}
 
     rows = []
     for sym, df in raw.items():
-        # ✅ DF yoxlaması
+        # DF yoxlaması
         if not isinstance(df, pd.DataFrame) or df.empty:
             st.warning(f"{sym}: məlumat tapılmadı və ya boş DataFrame.")
             continue
@@ -118,7 +122,7 @@ if run_btn:
         # ATR təhlükəsiz oxu
         atr_val = last.get("atr") or last.get("atr14") or last.get("ATR")
         if atr_val is None:
-            atr_val = float(last["close"]) * 0.02  # ehtiyat dəyər
+            atr_val = float(last["close"]) * 0.02  # ehtiyat dəyər (≈2%)
 
         entry, sl, tp = make_trade_plan(
             float(last["close"]), float(atr_val),
@@ -149,6 +153,8 @@ if run_btn:
                     )
             ok = send_telegram("\n".join(msg)) if len(msg) > 1 else False
             st.success("Bildiriş göndərildi ✅" if ok else "Siqnal yoxdur və ya Telegram secrets boşdur ❗️")
+else:
+    st.info("Sol paneldə parametrləri seç və **Analizi işə sal** düyməsinə bas.")
 
 # ---------- In-app Assistant (Chat) ----------
 st.markdown("---")
