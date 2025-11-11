@@ -6,7 +6,6 @@ import pandas as pd
 import streamlit as st
 
 # ---- Daxili modullar ----
-from core.data import load_many
 from core.features import add_indicators
 from core.strategy import latest_signal
 from core.risk import position_size, make_trade_plan
@@ -16,18 +15,17 @@ from core.charts import price_chart
 from core.backtest import run_backtest
 from openai import OpenAI
 
-# (Gələn mərhələ üçün hazır saxlayırıq)
-from core.ml_model import train_model              # hazırda birbaşa çağırmırıq
-from core.predictor import ai_forecast             # Forecast üçün istifadə olunacaq
-
 # ---- Səhifə konfiqurasiyası ----
 st.set_page_config(page_title="Invest AI — Secure", layout="wide")
+
 
 # ================== CACHE-Lİ YÜKLƏMƏ ==================
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_load_many(symbol_list, start, end, interval):
-    # Streamlit cache sabit işləsin deyə ayrıca funksiya
-    return load_many(symbol_list, start, end, interval)
+    # Qəsdən içəridə import — Streamlit cache üçün sabit işləyir
+    from core.data import load_many as _load_many
+    return _load_many(symbol_list, start, end, interval)
+
 
 # ================== LOG HELPER ==================
 def log_action(kind: str, payload: dict):
@@ -40,6 +38,7 @@ def log_action(kind: str, payload: dict):
             kind,
             json.dumps(payload, ensure_ascii=False)
         ])
+
 
 # ================== BASIC AUTH ==================
 def check_auth():
@@ -61,17 +60,19 @@ def check_auth():
             st.error("Şifrə yanlışdır.")
     st.stop()
 
+
 # ================== UI: BAŞLIQ ==================
 check_auth()
 st.title("📈 Invest AI — No-Code Ticarət Analitikası")
+
 
 # ================== SIDEBAR ==================
 with st.sidebar:
     st.header("⚙ Parametrlər")
 
-    symbols = st.text_input("Simvollar (vergüllə)", value="AAPL,MSFT,SPY")
-    start   = st.date_input("Başlanğıc", value=date(2020, 1, 1))
-    end     = st.date_input("Son", value=date.today())
+    symbols  = st.text_input("Simvollar (vergüllə)", value="AAPL,MSFT,SPY")
+    start    = st.date_input("Başlanğıc", value=date(2020, 1, 1))
+    end      = st.date_input("Son", value=date.today())
     interval = st.selectbox("Interval", ["1d", "1wk", "1mo"], index=0)
 
     st.subheader("Strategiya")
@@ -81,7 +82,11 @@ with st.sidebar:
         "💎 GPT-5":       "Ən güclü və analitik — dərin bazar proqnozları üçün"
     }
     selected_label = st.selectbox("AI modelini seçin:", list(model_options.keys()), index=0)
-    model_map = {"⚡ GPT-4o-mini": "gpt-4o-mini", "🧠 GPT-4o": "gpt-4o", "💎 GPT-5": "gpt-5"}
+    model_map = {
+        "⚡ GPT-4o-mini": "gpt-4o-mini",
+        "🧠 GPT-4o": "gpt-4o",
+        "💎 GPT-5": "gpt-5"
+    }
     openai_model = model_map[selected_label]
     st.markdown(f"**Aktiv model:** {selected_label}\n\n_{model_options[selected_label]}_")
     st.caption(f"**Aktiv model kodu:** {openai_model}")
@@ -97,15 +102,11 @@ with st.sidebar:
     fast_ma  = st.number_input("Sürətli MA", value=10, step=1)
     slow_ma  = st.number_input("Yavaş MA",   value=50, step=1)
 
-    st.subheader("AI Forecast")
-    horizon_days = st.slider("Proqnoz üfüqü (gün)", 5, 30, 10, 1)
-    model_type   = st.selectbox("Model", ["xgb", "rf"], index=0,
-                                help="XGB varsa daha yaxşı nəticə verir; olmazsa RF işləyəcək.")
-
     st.markdown("---")
     st.subheader("Risk")
     init_cash      = st.number_input("Başlanğıc kapital", value=100000, step=1000)
     per_trade_risk = st.number_input("Hər əməliyyat riski", value=0.01, step=0.005, format="%.3f")
+
 
 # ================== MAIN: LIVE SIGNALS ==================
 st.markdown("## 🔎 Live Signals")
@@ -143,7 +144,8 @@ if run_btn:
 
         entry, sl, tp = make_trade_plan(
             float(last["close"]), float(atr_val),
-            atr_mult_sl=float(atr_mult_sl), atr_mult_tp=float(atr_mult_tp)
+            atr_mult_sl=float(atr_mult_sl),
+            atr_mult_tp=float(atr_mult_tp)
         )
         qty = position_size(float(init_cash), float(per_trade_risk), entry, sl)
         rr  = round((tp - entry) / max(entry - sl, 0.001), 2)
@@ -158,66 +160,44 @@ if run_btn:
     else:
         df_signals = pd.DataFrame(rows).sort_values("Score", ascending=False)
         st.dataframe(df_signals, use_container_width=True)
-# --- AI FORECAST (TOP 2) ---
-with st.expander("🔮 AI Forecast (Top 2 — ehtimal və gözlənilən gəlir)", expanded=False):
-    top_syms = list(df_signals["Symbol"].head(2).values)
-    rows_fc = []
-    for sym in top_syms:
-        df_raw = raw.get(sym)
-        if isinstance(df_raw, pd.DataFrame) and not df_raw.empty:
-            try:
-                fc = ai_forecast(df_raw, horizon_days=int(horizon_days), model_type=model_type)
-                rows_fc.append({
-                    "Symbol": sym,
-                    "Prob↑": fc["prob_up"],
-                    "Exp.Return": fc["expected_return"],
-                    "Reco": fc["recommendation"],
-                    "Model Acc": fc["acc"],
-                    "Horizon(d)": int(horizon_days),
-                    "Model": model_type.upper(),
-                })
-            except Exception as e:
-                st.warning(f"{sym}: Forecast xətası — {e}")
 
-    if rows_fc:
-        st.dataframe(pd.DataFrame(rows_fc), use_container_width=True)
-        st.caption("Qeyd: Bu proqnozlar təhsil məqsədlidir — real investisiya qərarı üçün deyil.")
-    else:
-        st.info("Top simvollar üçün forecast çıxarmaq mümkün olmadı.")
-
-# --- AI ŞƏRHİ (TOP 2) ---
-with st.expander("💬 AI Şərh (Top 2 siqnal üçün qısa izah)", expanded=False):
-    top_n = min(2, len(df_signals))
-    ai_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", "")
-    if not ai_key:
-        st.info("OPENAI_API_KEY yoxdur — Settings → Secrets bölməsinə əlavə et.")
-    else:
-        client = OpenAI(api_key=ai_key)
-        for i in range(top_n):
-            row = df_signals.iloc[i]
-            sym = row["Symbol"]
-            summary = (
-                f"Symbol: {sym}\n"
-                f"Action: {row['Action']}, Score: {row['Score']}\n"
-                f"Entry: {row['Entry']}, SL: {row['SL']}, TP: {row['TP']}, R:R: {row['R:R']}\n"
-                f"Risk: per_trade_risk={per_trade_risk}, init_cash={init_cash}\n"
-                f"Texniki param: RSI[{rsi_low},{rsi_high}], MA(fast={fast_ma}, slow={slow_ma})"
-            )
-            if st.button(f"AI şərh yaz — {sym}", key=f"explain_{sym}_{i}"):
-                try:
-                    resp = client.chat.completions.create(
-                        model=openai_model,
-                        temperature=0.2,
-                        messages=[
-                            {"role": "system",
-                             "content": "Sən təcrübəli portfel meneceri kimi qısa, konkret və risk yönümlü şərh ver. FİNANS MƏSLƏHƏTİ DEYİL."},
-                            {"role": "user",
-                             "content": f"Bu siqnalı izah et və 3 cümləlik fəaliyyət planı ver:\n{summary}"}
-                        ]
+        # --- AI ŞƏRHİ (TOP 2) ---
+        with st.expander("💬 AI Şərh (Top 2 siqnal üçün qısa izah)", expanded=False):
+            top_n = min(2, len(df_signals))
+            ai_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", "")
+            if not ai_key:
+                st.info("OPENAI_API_KEY yoxdur — Settings → Secrets bölməsinə əlavə et.")
+            else:
+                client = OpenAI(api_key=ai_key)
+                for i in range(top_n):
+                    row = df_signals.iloc[i]
+                    sym = row["Symbol"]
+                    summary = (
+                        f"Symbol: {sym}\n"
+                        f"Action: {row['Action']}, Score: {row['Score']}\n"
+                        f"Entry: {row['Entry']}, SL: {row['SL']}, TP: {row['TP']}, R:R: {row['R:R']}\n"
+                        f"Risk: per_trade_risk={per_trade_risk}, init_cash={init_cash}\n"
+                        f"Texniki param: RSI[{rsi_low},{rsi_high}], MA(fast={fast_ma}, slow={slow_ma})"
                     )
-                    st.markdown(resp.choices[0].message.content)
-                except Exception as e:
-                    st.error(f"AI xətası: {e}")
+                    if st.button(f"AI şərh yaz — {sym}", key=f"explain_{sym}_{i}"):
+                        try:
+                            resp = client.chat.completions.create(
+                                model=openai_model,
+                                temperature=0.2,
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": "Sən təcrübəli portfel meneceri kimi qısa, konkret və risk yönümlü şərh ver. FİNANS MƏSLƏHƏTİ DEYİL."
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": f"Bu siqnalı izah et və 3 cümləlik fəaliyyət planı ver:\n{summary}"
+                                    }
+                                ]
+                            )
+                            st.markdown(resp.choices[0].message.content)
+                        except Exception as e:
+                            st.error(f"AI xətası: {e}")
 
         # --- QRAFİK (TOP 2) ---
         with st.expander("📈 Qrafik (Top 2 siqnal)", expanded=False):
@@ -235,9 +215,11 @@ with st.expander("💬 AI Şərh (Top 2 siqnal üçün qısa izah)", expanded=Fa
                 for sym in df_signals["Symbol"]:
                     df_raw = raw.get(sym)
                     if isinstance(df_raw, pd.DataFrame) and not df_raw.empty:
-                        bt = run_backtest(df_raw,
-                                          rsi_low=rsi_low, rsi_high=rsi_high,
-                                          fast_ma=fast_ma, slow_ma=slow_ma)
+                        bt = run_backtest(
+                            df_raw,
+                            rsi_low=rsi_low, rsi_high=rsi_high,
+                            fast_ma=fast_ma, slow_ma=slow_ma
+                        )
                         col1, col2 = st.columns(2)
                         col1.metric(f"{sym} — Total Return", f"{bt['total_return']*100:.1f}%")
                         col2.metric(f"{sym} — Max DD", f"{bt['max_drawdown']*100:.1f}%")
@@ -257,16 +239,21 @@ with st.expander("💬 AI Şərh (Top 2 siqnal üçün qısa izah)", expanded=Fa
 else:
     st.info("Sol paneldə parametrləri seç və **Analizi işə sal** düyməsinə bas.")
 
+
 # ================== IN-APP CHAT ==================
 st.markdown("---")
 st.header("🤝 Daxili köməkçi (Chat)")
 
 if "chat" not in st.session_state:
     st.session_state.chat = [
-        {"role": "system",
-         "content": "Sən Invest AI sisteminin daxili köməkçisisən. İstifadəçiyə strategiya, risk, parametr tənzimləməsi, backtest nəticələrinin izahı, Alpaca inteqrasiyası, Streamlit istifadəsi və ümumi texniki suallarda kömək et. Qısa, konkret cavabla."},
-        {"role": "assistant",
-         "content": "Salam! Invest AI panelinə xoş gəldin. Parametrləri necə tənzimləmək istəyirsən?"}
+        {
+            "role": "system",
+            "content": "Sən Invest AI sisteminin daxili köməkçisisən. İstifadəçiyə strategiya, risk, parametr tənzimləməsi, backtest nəticələrinin izahı, Alpaca inteqrasiyası, Streamlit istifadəsi və ümumi texniki suallarda kömək et. Qısa, konkret cavabla."
+        },
+        {
+            "role": "assistant",
+            "content": "Salam! Invest AI panelinə xoş gəldin. Parametrləri necə tənzimləmək istəyirsən?"
+        }
     ]
 
 for m in st.session_state.chat:
@@ -295,6 +282,7 @@ if user_msg:
     with st.chat_message("assistant"):
         st.markdown(reply)
 
+
 # ================== TRADE LOG ==================
 st.markdown("## 📒 Trade Log")
 log_df = read_log()
@@ -312,7 +300,13 @@ with st.expander("➕ Əməliyyatı jurnala əlavə et"):
 
     if st.button("Jurnala yaz"):
         append_trade({
-            "symbol": sym, "action": act, "entry": entry,
-            "sl": sl, "tp": tp, "qty": qty, "score": None, "note": note
+            "symbol": sym,
+            "action": act,
+            "entry": entry,
+            "sl": sl,
+            "tp": tp,
+            "qty": qty,
+            "score": None,
+            "note": note
         })
         st.rerun()
