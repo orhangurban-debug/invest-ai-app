@@ -266,34 +266,34 @@ if run_btn:
                         st.line_chart(bt["equity_curve"])
 
         # --- AUTO TRADE (Alpaca və ya Simulyasiya) ---
-with st.expander("🤖 Auto Trade Executor", expanded=False):
-    trade_mode = st.radio("Rejim:", ["Simulyasiya (demo)", "Alpaca Paper Trading"], index=0)
-    execute_btn = st.button("🚀 Əməliyyatları yerinə yetir")
+        with st.expander("🤖 Auto Trade Executor", expanded=False):
+            trade_mode = st.radio("Rejim:", ["Simulyasiya (demo)", "Alpaca Paper Trading"], index=0)
+            execute_btn = st.button("🚀 Əməliyyatları yerinə yetir")
 
-    if execute_btn:
-        try:
-            results = []
-            for _, row in df_signals.iterrows():
-                sym = row["Symbol"]
-                act = row["Action"]
-                qty = int(row["Qty"])
-                entry = float(row["Entry"])
-                if qty <= 0:
-                    continue
+            if execute_btn:
+                try:
+                    results = []
+                    for _, row in df_signals.iterrows():
+                        sym = row["Symbol"]
+                        act = row["Action"]
+                        qty = int(row["Qty"])
+                        entry = float(row["Entry"])
+                        if qty <= 0:
+                            continue
 
-                if trade_mode.startswith("Simulyasiya"):
-                    res = simulate_trade(act, sym, qty, entry)
-                else:
-                    res = alpaca_trade(act, sym, qty, entry)
-                results.append(res)
+                        if trade_mode.startswith("Simulyasiya"):
+                            res = simulate_trade(act, sym, qty, entry)
+                        else:
+                            res = alpaca_trade(act, sym, qty, entry)
+                        results.append(res)
 
-            if results:
-                st.success(f"{len(results)} əməliyyat uğurla icra olundu ✅")
-                st.json(results)
-            else:
-                st.info("Aktiv əməliyyat yoxdur və ya Qty=0.")
-        except Exception as e:
-            st.error(f"Auto-trade xətası: {e}")
+                    if results:
+                        st.success(f"{len(results)} əməliyyat uğurla icra olundu ✅")
+                        st.json(results)
+                    else:
+                        st.info("Aktiv əməliyyat yoxdur və ya Qty=0.")
+                except Exception as e:
+                    st.error(f"Auto-trade xətası: {e}")
 
         # --- TELEGRAM ALERT ---
         if st.button("🔔 Telegram (Score ≥ seçilmiş hədd)"):
