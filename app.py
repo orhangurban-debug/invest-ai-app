@@ -16,6 +16,7 @@ from core.backtest import run_backtest
 from openai import OpenAI
 from core.predictor import ai_forecast  # ML proqnoz üçün
 from core.portfolio import analyze_portfolio, optimize_allocation, build_trade_plan, calc_var_es, calc_sharpe
+from core.trader import alpaca_trade, simulate_trade
 
 # ---- Səhifə konfiqurasiyası ----
 st.set_page_config(page_title="Invest AI — Secure", layout="wide")
