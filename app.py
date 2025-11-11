@@ -158,40 +158,66 @@ if run_btn:
     else:
         df_signals = pd.DataFrame(rows).sort_values("Score", ascending=False)
         st.dataframe(df_signals, use_container_width=True)
+# --- AI FORECAST (TOP 2) ---
+with st.expander("🔮 AI Forecast (Top 2 — ehtimal və gözlənilən gəlir)", expanded=False):
+    top_syms = list(df_signals["Symbol"].head(2).values)
+    rows_fc = []
+    for sym in top_syms:
+        df_raw = raw.get(sym)
+        if isinstance(df_raw, pd.DataFrame) and not df_raw.empty:
+            try:
+                fc = ai_forecast(df_raw, horizon_days=int(horizon_days), model_type=model_type)
+                rows_fc.append({
+                    "Symbol": sym,
+                    "Prob↑": fc["prob_up"],
+                    "Exp.Return": fc["expected_return"],
+                    "Reco": fc["recommendation"],
+                    "Model Acc": fc["acc"],
+                    "Horizon(d)": int(horizon_days),
+                    "Model": model_type.upper(),
+                })
+            except Exception as e:
+                st.warning(f"{sym}: Forecast xətası — {e}")
 
-        # --- AI ŞƏRHİ (TOP 2) ---
-        with st.expander("💬 AI Şərh (Top 2 siqnal üçün qısa izah)", expanded=False):
-            top_n = min(2, len(df_signals))
-            ai_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", "")
-            if not ai_key:
-                st.info("OPENAI_API_KEY yoxdur — Settings → Secrets bölməsinə əlavə et.")
-            else:
-                client = OpenAI(api_key=ai_key)
-                for i in range(top_n):
-                    row = df_signals.iloc[i]
-                    sym = row["Symbol"]
-                    summary = (
-                        f"Symbol: {sym}\n"
-                        f"Action: {row['Action']}, Score: {row['Score']}\n"
-                        f"Entry: {row['Entry']}, SL: {row['SL']}, TP: {row['TP']}, R:R: {row['R:R']}\n"
-                        f"Risk: per_trade_risk={per_trade_risk}, init_cash={init_cash}\n"
-                        f"Texniki param: RSI[{rsi_low},{rsi_high}], MA(fast={fast_ma}, slow={slow_ma})"
+    if rows_fc:
+        st.dataframe(pd.DataFrame(rows_fc), use_container_width=True)
+        st.caption("Qeyd: Bu proqnozlar təhsil məqsədlidir — real investisiya qərarı üçün deyil.")
+    else:
+        st.info("Top simvollar üçün forecast çıxarmaq mümkün olmadı.")
+
+# --- AI ŞƏRHİ (TOP 2) ---
+with st.expander("💬 AI Şərh (Top 2 siqnal üçün qısa izah)", expanded=False):
+    top_n = min(2, len(df_signals))
+    ai_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", "")
+    if not ai_key:
+        st.info("OPENAI_API_KEY yoxdur — Settings → Secrets bölməsinə əlavə et.")
+    else:
+        client = OpenAI(api_key=ai_key)
+        for i in range(top_n):
+            row = df_signals.iloc[i]
+            sym = row["Symbol"]
+            summary = (
+                f"Symbol: {sym}\n"
+                f"Action: {row['Action']}, Score: {row['Score']}\n"
+                f"Entry: {row['Entry']}, SL: {row['SL']}, TP: {row['TP']}, R:R: {row['R:R']}\n"
+                f"Risk: per_trade_risk={per_trade_risk}, init_cash={init_cash}\n"
+                f"Texniki param: RSI[{rsi_low},{rsi_high}], MA(fast={fast_ma}, slow={slow_ma})"
+            )
+            if st.button(f"AI şərh yaz — {sym}", key=f"explain_{sym}_{i}"):
+                try:
+                    resp = client.chat.completions.create(
+                        model=openai_model,
+                        temperature=0.2,
+                        messages=[
+                            {"role": "system",
+                             "content": "Sən təcrübəli portfel meneceri kimi qısa, konkret və risk yönümlü şərh ver. FİNANS MƏSLƏHƏTİ DEYİL."},
+                            {"role": "user",
+                             "content": f"Bu siqnalı izah et və 3 cümləlik fəaliyyət planı ver:\n{summary}"}
+                        ]
                     )
-                    if st.button(f"AI şərh yaz — {sym}", key=f"explain_{sym}_{i}"):
-                        try:
-                            resp = client.chat.completions.create(
-                                model=openai_model,
-                                temperature=0.2,
-                                messages=[
-                                    {"role": "system",
-                                     "content": "Sən təcrübəli portfel meneceri kimi qısa, konkret və risk yönümlü şərh ver. FİNANS MƏSLƏHƏTİ DEYİL."},
-                                    {"role": "user",
-                                     "content": f"Bu siqnalı izah et və 3 cümləlik fəaliyyət planı ver:\n{summary}"}
-                                ]
-                            )
-                            st.markdown(resp.choices[0].message.content)
-                        except Exception as e:
-                            st.error(f"AI xətası: {e}")
+                    st.markdown(resp.choices[0].message.content)
+                except Exception as e:
+                    st.error(f"AI xətası: {e}")
 
         # --- QRAFİK (TOP 2) ---
         with st.expander("📈 Qrafik (Top 2 siqnal)", expanded=False):
