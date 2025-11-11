@@ -241,6 +241,83 @@ if run_btn:
                 df_raw = raw.get(sym)
                 if isinstance(df_raw, pd.DataFrame) and not df_raw.empty:
                     st.plotly_chart(price_chart(df_raw, title=sym), use_container_width=True)
+                    
+# --- PORTFOLIO & RISK DASHBOARD ---
+with st.expander("💼 Portfolio Analysis & Risk Metrics", expanded=False):
+    try:
+        if 'df_signals' not in locals() or df_signals.empty:
+            st.info("Portfel analizi üçün siqnal cədvəli yoxdur.")
+        else:
+            # 1) Portfel namizədləri: exp_ret, vol, prob, acc
+            syms_for_pf = list(df_signals["Symbol"].values)
+            analysis = analyze_portfolio(raw, syms_for_pf, horizon_days=int(horizon_days))
+            rows_pf = analysis["rows"]
+
+            if not rows_pf:
+                st.info("Portfel analizi üçün kifayət qədər data yoxdur.")
+            else:
+                df_pf = pd.DataFrame(rows_pf).sort_values("exp_ret", ascending=False)
+                st.dataframe(df_pf.rename(columns={
+                    "symbol":"Symbol","exp_ret":"ExpRet(d)","vol":"Vol(d)","prob_up":"Prob↑","acc":"ModelAcc"
+                }), use_container_width=True)
+
+                # 2) Allocation (AI, risk-adjusted)
+                candidates = [{"symbol": r["symbol"], "exp_ret": r["exp_ret"], "vol": r["vol"]} for r in rows_pf]
+                weights = optimize_allocation(candidates, max_pos_pct=float(max_pos_pct))
+
+                # 3) Hədəf qty/SL planı (Entry/ATR-lər df_signals və raw-dan)
+                entries = {r["Symbol"]: float(r["Entry"]) for _, r in df_signals.iterrows()}
+                atrs    = {}
+                for sym in syms_for_pf:
+                    df_raw = raw.get(sym)
+                    if isinstance(df_raw, pd.DataFrame) and not df_raw.empty:
+                        atrs[sym] = float((df_raw["high"] - df_raw["low"]).rolling(14).mean().dropna().iloc[-1])
+
+                plans = build_trade_plan(
+                    weights=weights,
+                    entries=entries,
+                    atrs=atrs,
+                    init_cash=float(init_cash),
+                    per_trade_risk=float(per_trade_risk),
+                )
+
+                # 4) Göstər
+                plan_rows = []
+                for sym, p in plans.items():
+                    plan_rows.append({
+                        "Symbol": sym,
+                        "Weight": p["weight"],
+                        "Target $": p["target_cash"],
+                        "Entry": p["entry"],
+                        "SL": p["sl"],
+                        "ATR": p["atr"],
+                        "Qty": p["qty"]
+                    })
+                st.subheader("🔧 AI Allocation — Hədəf bölüşdürmə")
+                st.dataframe(pd.DataFrame(plan_rows).sort_values("Weight", ascending=False), use_container_width=True)
+                st.caption("Qeyd: Paylar max alət cap-ı ilə limitlənir. Qalan nağd saxlanılır.")
+
+                # 5) VaR / ES / Sharpe (tarixi)
+                # Portfel günlük qayıdışı üçün sadə xətti kombinə (weights-lə)
+                port_ret = None
+                for sym, w in weights.items():
+                    r = analysis["returns"].get(sym)
+                    if r is None or r.empty:
+                        continue
+                    r_w = r * float(w)
+                    port_ret = r_w if port_ret is None else port_ret.align(r_w, join="inner")[0] + r_w.align(port_ret, join="inner")[0]
+
+                if port_ret is not None and len(port_ret) > 50:
+                    var95, es95 = calc_var_es(port_ret.dropna(), alpha=0.95)
+                    sharpe = calc_sharpe(port_ret.dropna())
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("VaR (95%, gündəlik)", f"{var95*100:.2f}%")
+                    c2.metric("ES (95%, gündəlik)", f"{es95*100:.2f}%")
+                    c3.metric("Sharpe (illik)", f"{sharpe:.2f}")
+                else:
+                    st.info("VaR/ES/Sharpe üçün kifayət qədər tarixi məlumat yoxdur.")
+    except Exception as e:
+        st.error(f"Portfolio xətası: {e}")
 
         # --- BACKTEST ---
         st.markdown("---")
