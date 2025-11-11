@@ -1,35 +1,60 @@
 # core/predictor.py
 import numpy as np
 import pandas as pd
-from .ml_model import train_model, predict_up_proba
+from typing import Literal, Dict, Any
+from .ml_model import train_model, TrainedModel
 
-def ai_forecast(df_feat: pd.DataFrame, horizon: int = 10, model_type: str = "xgb"):
-    # treninq
-    model, meta = train_model(df_feat, horizon=horizon, model_type=model_type)
+def _last_features(df: pd.DataFrame, cols: list) -> pd.DataFrame:
+    # features-in hesabı ml_model-də də var; burada yalnız son sətri uyğunlaşdırırıq
+    x = df.copy()
+    x["rsi14"] = x["close"].pct_change().rolling(14).apply(
+        lambda s: 100 - (100 / (1 + (s.clip(lower=0).mean() / (-(s.clip(upper=0).mean()) + 1e-9)))), raw=True
+    )
+    x["ma10"]  = x["close"].rolling(10).mean()
+    x["ma50"]  = x["close"].rolling(50).mean()
+    x["roc5"]  = x["close"].pct_change(5)
+    x["atr14"] = (x["high"] - x["low"]).rolling(14).mean()
+    x = x.dropna()
+    return x[cols].iloc[[-1]]
 
-    # son sətir üzrə ehtimal
-    last = df_feat.iloc[-1]
-    p_up = predict_up_proba(model, meta, last)  # 0..1
+def ai_forecast(
+    df: pd.DataFrame,
+    horizon_days: int = 10,
+    model_type: Literal["xgb", "rf"] = "xgb"
+) -> Dict[str, Any]:
+    """
+    Çıxış:
+      {
+        'prob_up': 0.63,
+        'expected_return': 0.045,   # ~horizon üçün sadə təxmini R
+        'recommendation': 'BUY'|'HOLD'|'SELL',
+        'acc': 0.71
+      }
+    """
+    tm: TrainedModel = train_model(df, horizon_days=horizon_days, model_type=model_type)
+    lastX = _last_features(df, tm.X_cols)
 
-    # sadə gözləntilər (heuristic): ATR və vol əsasında 10 günlük gözlənən diapazon
-    atr = float(df_feat["atr"].iloc[-1] if "atr" in df_feat.columns else df_feat["close"].iloc[-1]*0.02)
-    price = float(df_feat["close"].iloc[-1])
-
-    exp_up   = atr * 3.0 / price    # ~ +% diapazon (10 gün)
-    exp_down = atr * 2.0 / price    # ~ -% diapazon
-    exp_ret  = p_up*exp_up - (1-p_up)*exp_down
-
-    # tövsiyə
-    if p_up >= 0.62 and exp_ret > 0:
-        rec = "BUY"
-    elif p_up <= 0.38 and exp_ret < 0:
-        rec = "SELL"
+    # proba
+    if hasattr(tm.model, "predict_proba"):
+        p_up = float(tm.model.predict_proba(lastX)[0, 1])
     else:
-        rec = "HOLD"
+        pred = tm.model.predict(lastX)[0]
+        p_up = 0.6 if pred == 1 else 0.4
+
+    # sadə expected return: (p_up - (1-p_up)) * tipik_oynama
+    vol = float(df["close"].pct_change().rolling(20).std().iloc[-1] or 0.01)
+    expected_r = (p_up - (1 - p_up)) * vol * (horizon_days / 10)
+
+    if p_up >= 0.6 and expected_r > 0:
+        reco = "BUY"
+    elif p_up <= 0.4 and expected_r < 0:
+        reco = "SELL"
+    else:
+        reco = "HOLD"
 
     return {
-        "proba_up": round(p_up, 3),
-        "expected_return": round(exp_ret*100, 2),   # %
-        "recommendation": rec,
-        "meta": meta
+        "prob_up": round(p_up, 4),
+        "expected_return": round(expected_r, 4),
+        "recommendation": reco,
+        "acc": round(tm.acc, 4),
     }
