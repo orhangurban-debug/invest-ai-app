@@ -94,6 +94,21 @@ with st.sidebar:
 
 # ===================== MAIN: LIVE SIGNALS =====================
 st.markdown("## 🔎 Live Signals")
+        st.markdown("---")
+        bt_tab = st.container()
+        with bt_tab:
+            st.subheader("🧪 Backtest (sadə qayda ilə)")
+            if st.button("Backtest-i işə sal"):
+                for sym in df_signals["Symbol"]:
+                    df_raw = raw.get(sym)
+                    if isinstance(df_raw, pd.DataFrame) and not df_raw.empty:
+                        bt = run_backtest(df_raw, rsi_low=rsi_low, rsi_high=rsi_high,
+                                          fast_ma=fast_ma, slow_ma=slow_ma)
+                        col1, col2 = st.columns(2)
+                        col1.metric(f"{sym} — Total Return", f"{bt['total_return']*100:.1f}%")
+                        col2.metric(f"{sym} — Max DD", f"{bt['max_drawdown']*100:.1f}%")
+                        st.line_chart(bt["equity_curve"])
+
 run_btn = st.button("🚀 Analizi işə sal")
 
 if run_btn:
