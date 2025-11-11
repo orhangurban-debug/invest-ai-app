@@ -26,6 +26,30 @@ st.set_page_config(page_title="Invest AI — Secure", layout="wide")
 def cached_load_many(symbol_list, start, end, interval):
     from core.data import load_many as _load_many
     return _load_many(symbol_list, start, end, interval)
+    
+# ---------- Alerts: helper-lər ----------
+def _init_alert_state():
+    if "last_alert_at" not in st.session_state:
+        st.session_state.last_alert_at = {}  # { "AAPL": timestamp, ... }
+
+def _rate_limit_ok(sym: str, cooldown_min: int) -> bool:
+    """Eyni simvol üçün cooldown pəncərəsi saxla."""
+    _init_alert_state()
+    import time
+    now = time.time()
+    last = st.session_state.last_alert_at.get(sym, 0)
+    if now - last >= cooldown_min * 60:
+        st.session_state.last_alert_at[sym] = now
+        return True
+    return False
+
+def _log_alert(payload: dict):
+    """Göndərilən xəbərdarlıqları fayla yaz."""
+    import csv, os, datetime, json as _json
+    os.makedirs("logs", exist_ok=True)
+    with open("logs/alerts.csv", "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow([datetime.datetime.utcnow().isoformat(), _json.dumps(payload, ensure_ascii=False)])
 
 # ================== LOG HELPER ==================
 def log_action(kind: str, payload: dict):
