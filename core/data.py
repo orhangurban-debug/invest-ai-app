@@ -1,36 +1,35 @@
 # core/data.py
-import yfinance as yf
+import time
+from typing import Dict, List
 import pandas as pd
+import yfinance as yf
 
-def load_ohlcv(symbol: str, start: str, end: str, interval="1d") -> pd.DataFrame:
-    """YFinance-dən OHLCV məlumatlarını yükləyir və sütun adlarını standartlaşdırır."""
-    try:
-        df = yf.download(symbol, start=start, end=end, interval=interval, progress=False)
-        if df is None or df.empty:
-            print(f"⚠️ Boş məlumat: {symbol}")
-            return pd.DataFrame()
+def _download_one(symbol: str, start: str, end: str, interval: str, retries: int = 4, base_sleep: float = 1.5) -> pd.DataFrame:
+    last_err = None
+    for i in range(retries):
+        try:
+            df = yf.download(symbol, start=start, end=end, interval=interval, progress=False, auto_adjust=True, threads=False)
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                df = df.reset_index(drop=False)
+                # sütunları kiçilt və standartlaşdır
+                df.columns = [str(c).lower() for c in df.columns]
+                # bəzən yfinance "adj close" verir – "close" yoxdursa onu istifadə edək
+                if "close" not in df and "adj close" in df:
+                    df["close"] = df["adj close"]
+                # yalnız lazım olan sütunların olduğuna əmin ol
+                need = {"open","high","low","close"}
+                if not need.issubset(set(df.columns)):
+                    raise ValueError(f"Missing columns: {need - set(df.columns)}")
+                return df.dropna()
+            last_err = RuntimeError("Empty dataframe")
+        except Exception as e:
+            last_err = e
+        time.sleep(base_sleep * (2**i))  # exponential backoff
+    raise last_err
 
-        # sütunları standart hala salırıq
-        df = df.rename(columns={
-            "Open": "open",
-            "High": "high",
-            "Low": "low",
-            "Close": "close",
-            "Adj Close": "close",
-            "Volume": "volume"
-        })
-        df = df.dropna().reset_index()
-        print(f"✅ {symbol} loaded: {df.shape}, columns={list(df.columns)}")
-        return df
-
-    except Exception as e:
-        print(f"❌ Data yükləmə xətası ({symbol}): {e}")
-        return pd.DataFrame()
-
-def load_many(symbols, start, end, interval="1d"):
-    """Bir neçə simvol üçün məlumatları ardıcıl yükləyir."""
-    data = {}
-    for sym in symbols:
-        df = load_ohlcv(sym, start, end, interval)
-        data[sym] = df
-    return data
+def load_many(symbols: List[str], start: str, end: str, interval: str) -> Dict[str, pd.DataFrame]:
+    out: Dict[str, pd.DataFrame] = {}
+    for s in symbols:
+        out[s] = _download_one(s, start, end, interval)
+        time.sleep(0.6)  # bir az pauza – limitə düşməmək üçün
+    return out
