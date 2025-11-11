@@ -26,7 +26,7 @@ st.set_page_config(page_title="Invest AI — Secure", layout="wide")
 def cached_load_many(symbol_list, start, end, interval):
     from core.data import load_many as _load_many
     return _load_many(symbol_list, start, end, interval)
-    
+
 # ---------- Alerts: helper-lər ----------
 def _init_alert_state():
     if "last_alert_at" not in st.session_state:
@@ -132,6 +132,7 @@ with st.sidebar:
     horizon_days   = st.slider("Proqnoz üfüqü (gün)", 3, 20, 5, 1)
     ml_model_type  = st.selectbox("ML model növü", ["xgb", "rf"], index=0)
     max_pos_pct    = st.number_input("Max alət payı", value=0.25, step=0.05, format="%.2f")
+
     # ─────────────────────────────────────────────
     st.markdown("---")
     st.subheader("🔔 Real-time & Alerts")
@@ -142,11 +143,24 @@ with st.sidebar:
     enable_tg_alerts = st.checkbox("Telegram Alerts aktiv", value=False)
     alert_prob_th    = st.slider("Prob↑ həd (ML)", 50, 90, 65, 1)          # ML ehtimal %
     alert_er_th      = st.slider("ExpRet həd (%, ML)", 0.0, 10.0, 1.0, 0.1) # ML gözlənilən gəlir %
-    alert_score_th   = st.slider("Tech Score həd (0..100)", 0, 100, 60, 1)  # Sənin 'Score' sütunun
+    alert_score_th   = st.slider("Tech Score həd (0..100)", 0, 100, 60, 1)  # Texniki Score (0..100)
 
     ai_explain_alert = st.checkbox("AI şərhi ilə birlikdə göndər", value=True)
     alert_cooldown_m = st.number_input("Cooldown (dəq)", 1, 120, 15, 1,
                                        help="Eyni simvol üçün nə qədər tez-tez xəbərdarlıq göndərilsin")
+
+# ================== AUTO-REFRESH (sidebar-dan sonra!) ==================
+# Burada artıq auto_refresh və refresh_sec dəyərləri mövcuddur
+try:
+    if auto_refresh:
+        # Streamlit 1.28+ üçün
+        try:
+            st.autorefresh(interval=int(refresh_sec) * 1000, key="auto_refresh_key")
+        except Exception:
+            # Köhnə versiyada bu funksiya yoxdursa, sadəcə məlumat veririk
+            st.info("Auto-refresh funksiyası bu Streamlit versiyasında mövcud deyil. Manual yenilə.")
+except Exception:
+    pass
 
 # ================== MAIN: LIVE SIGNALS ==================
 st.markdown("## 🔎 Live Signals")
@@ -209,6 +223,7 @@ if run_btn:
                     fx = ai_forecast(df_raw, horizon_days=int(horizon_days), model_type=ml_model_type)
                     rows_fx.append({
                         "Symbol": sym,
+                        "Horizon(d)": int(horizon_days),
                         "Prob↑(%)": round(fx["prob_up"] * 100, 1),
                         "ExpRet(%)": round(fx["expected_return"] * 100, 2),
                         "Model Acc": round(fx["acc"] * 100, 1),
@@ -221,6 +236,61 @@ if run_btn:
                     st.info("Forecast üçün məlumat azdır.")
             except Exception as e:
                 st.error(f"Forecast xətası: {e}")
+
+            # --- REALTIME ALERT TRIGGER (ML + Tech) ---
+            try:
+                if rows_fx and enable_tg_alerts:
+                    alerts = []
+                    for r in rows_fx:
+                        sym   = r["Symbol"]
+                        prob  = float(r["Prob↑(%)"])
+                        eret  = float(r["ExpRet(%)"])
+                        tech_row = df_signals[df_signals["Symbol"] == sym]
+                        tech_score = float(tech_row["Score"].iloc[0]) if not tech_row.empty else 0.0
+
+                        if (prob >= alert_prob_th) or (eret >= alert_er_th) or (tech_score >= alert_score_th):
+                            if _rate_limit_ok(sym, int(alert_cooldown_m)):
+                                alerts.append({
+                                    "symbol": sym,
+                                    "prob": prob,
+                                    "exp_ret": eret,
+                                    "tech_score": tech_score,
+                                    "reco": r["Recommendation"],
+                                    "horizon": r["Horizon(d)"]
+                                })
+
+                    if alerts:
+                        lines = ["<b>🔔 AI Alert</b>"]
+                        for a in alerts:
+                            lines.append(
+                                f"{a['symbol']}: Prob↑ {a['prob']}% | ExpRet {a['exp_ret']}% | "
+                                f"Score {a['tech_score']} | Rec {a['reco']} | H{a['horizon']}d"
+                            )
+
+                        if ai_explain_alert:
+                            try:
+                                ai_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", "")
+                                if ai_key:
+                                    client = OpenAI(api_key=ai_key)
+                                    prompt = "Aşağıdakı siqnallar üçün 2-3 cümləlik risk-yönümlü qısa şərh yaz:\n" + "\n".join(lines[1:])
+                                    resp = client.chat.completions.create(
+                                        model=openai_model,
+                                        temperature=0.2,
+                                        messages=[
+                                            {"role":"system","content":"Qısa, konkret, risk xəbərdarlığı olan peşəkar treyder şərhi ver. Məsləhət deyil."},
+                                            {"role":"user","content": prompt}
+                                        ]
+                                    )
+                                    lines.append("\n<b>AI note:</b> " + resp.choices[0].message.content)
+                            except Exception as ee:
+                                st.warning(f"AI explain alınmadı: {ee}")
+
+                        msg = "\n".join(lines)
+                        ok = send_telegram(msg)
+                        _log_alert({"alerts": alerts, "sent": ok})
+                        st.success("Telegram alert göndərildi ✅" if ok else "Telegram göndərmədi ❗️")
+            except Exception as e:
+                st.error(f"Alert trigger xətası: {e}")
 
         # --- QRAFİK (TOP 2) ---
         with st.expander("📈 Qrafik (Top 2 siqnal)", expanded=False):
@@ -334,7 +404,7 @@ if run_btn:
                 except Exception as e:
                     st.error(f"Auto-trade xətası: {e}")
 
-        # --- TELEGRAM ALERT ---
+        # --- TELEGRAM ALERT (manual) ---
         if st.button("🔔 Telegram (Score ≥ seçilmiş hədd)"):
             msg = ["<b>Live Signals</b>"]
             for r in rows:
