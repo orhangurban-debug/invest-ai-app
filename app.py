@@ -15,6 +15,7 @@ from core.charts import price_chart
 from core.backtest import run_backtest
 from openai import OpenAI
 from core.predictor import ai_forecast  # ML proqnoz üçün
+from core.portfolio import analyze_portfolio, optimize_allocation, build_trade_plan, calc_var_es, calc_sharpe
 
 # ---- Səhifə konfiqurasiyası ----
 st.set_page_config(page_title="Invest AI — Secure", layout="wide")
@@ -98,7 +99,6 @@ with st.sidebar:
     fast_ma  = st.number_input("Sürətli MA", value=10, step=1)
     slow_ma  = st.number_input("Yavaş MA",   value=50, step=1)
 
-    st.markdown("---")
     st.subheader("Risk")
     init_cash      = st.number_input("Başlanğıc kapital", value=100000, step=1000)
     per_trade_risk = st.number_input("Hər əməliyyat riski", value=0.01, step=0.005, format="%.3f")
@@ -107,6 +107,8 @@ with st.sidebar:
     st.subheader("ML Forecast parametrləri")
     horizon_days   = st.slider("Proqnoz üfüqü (gün)", 3, 20, 5, 1)
     ml_model_type  = st.selectbox("ML model növü", ["xgb", "rf"], index=0)
+
+    max_pos_pct   = st.number_input("Max alət payı", value=0.25, step=0.05, format="%.2f")
 
 # ================== MAIN: LIVE SIGNALS ==================
 st.markdown("## 🔎 Live Signals")
