@@ -8,3 +8,4 @@ tqdm>=4.66.4
 openai>=1.40.0
 ta>=0.11.0
 python-telegram-bot==13.15
+plotly==5.24.1
