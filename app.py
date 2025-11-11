@@ -456,6 +456,40 @@ if user_msg:
     st.session_state.chat.append({"role": "assistant", "content": reply})
     with st.chat_message("assistant"):
         st.markdown(reply)
+        
+# ================== ALERT MONITOR ==================
+st.markdown("---")
+st.header("📊 Alert Monitor & History")
+
+import csv
+
+alert_file = "logs/alerts.csv"
+
+if os.path.exists(alert_file):
+    df_alerts = pd.read_csv(alert_file, header=None, names=["Time", "Data"])
+    df_alerts["Time"] = pd.to_datetime(df_alerts["Time"])
+    df_alerts = df_alerts.sort_values("Time", ascending=False)
+    
+    # Filtrləmə
+    c1, c2 = st.columns([2,1])
+    recent_only = c2.checkbox("Yalnız son 10 xəbərdarlıq", value=True)
+    if recent_only:
+        df_alerts = df_alerts.head(10)
+
+    st.dataframe(df_alerts[["Time", "Data"]], use_container_width=True)
+
+    # Ətraflı baxış
+    with st.expander("📄 Ətraflı JSON görünüşü", expanded=False):
+        for _, row in df_alerts.iterrows():
+            st.markdown(f"**🕒 {row['Time']}**")
+            try:
+                parsed = json.loads(row["Data"])
+                st.json(parsed)
+            except Exception:
+                st.write(row["Data"])
+            st.markdown("---")
+else:
+    st.info("Hələ ki, heç bir xəbərdarlıq (alert) qeydə alınmayıb.")
 
 # ================== TRADE LOG ==================
 st.markdown("## 📒 Trade Log")
