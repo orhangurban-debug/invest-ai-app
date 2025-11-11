@@ -2,6 +2,10 @@ import os, time, json, datetime
 import pandas as pd
 import streamlit as st
 from datetime import date
+# app.py (yuxarı hissədə, importlardan sonra)
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_load_many(symbol_list, start, end, interval):
+    return load_many(symbol_list, start, end, interval)
 
 # --- daxili modul importları (YEKCINS VERZIYA) ---
 from core.data import load_many
