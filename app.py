@@ -15,8 +15,10 @@ from core.alerts import send_telegram
 from core.charts import price_chart
 from core.backtest import run_backtest
 from openai import OpenAI
-from core.ml_model import train_model
-from core.predictor import ai_forecast
+
+# (Gələn mərhələ üçün hazır saxlayırıq)
+from core.ml_model import train_model              # hazırda birbaşa çağırmırıq
+from core.predictor import ai_forecast             # Forecast üçün istifadə olunacaq
 
 # ---- Səhifə konfiqurasiyası ----
 st.set_page_config(page_title="Invest AI — Secure", layout="wide")
@@ -24,9 +26,8 @@ st.set_page_config(page_title="Invest AI — Secure", layout="wide")
 # ================== CACHE-Lİ YÜKLƏMƏ ==================
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_load_many(symbol_list, start, end, interval):
-    # Qəsdən içəridə import saxlanılıb ki, Streamlit cache-də problem olmasın
-    from core.data import load_many as _load_many
-    return _load_many(symbol_list, start, end, interval)
+    # Streamlit cache sabit işləsin deyə ayrıca funksiya
+    return load_many(symbol_list, start, end, interval)
 
 # ================== LOG HELPER ==================
 def log_action(kind: str, payload: dict):
@@ -34,9 +35,11 @@ def log_action(kind: str, payload: dict):
     os.makedirs("logs", exist_ok=True)
     with open("logs/actions.csv", "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow([datetime.datetime.utcnow().isoformat(),
-                    kind,
-                    json.dumps(payload, ensure_ascii=False)])
+        w.writerow([
+            datetime.datetime.utcnow().isoformat(),
+            kind,
+            json.dumps(payload, ensure_ascii=False)
+        ])
 
 # ================== BASIC AUTH ==================
 def check_auth():
@@ -93,6 +96,11 @@ with st.sidebar:
     rsi_high = st.number_input("RSI yuxarı", value=70, step=1)
     fast_ma  = st.number_input("Sürətli MA", value=10, step=1)
     slow_ma  = st.number_input("Yavaş MA",   value=50, step=1)
+
+    st.subheader("AI Forecast")
+    horizon_days = st.slider("Proqnoz üfüqü (gün)", 5, 30, 10, 1)
+    model_type   = st.selectbox("Model", ["xgb", "rf"], index=0,
+                                help="XGB varsa daha yaxşı nəticə verir; olmazsa RF işləyəcək.")
 
     st.markdown("---")
     st.subheader("Risk")
