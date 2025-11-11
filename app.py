@@ -108,6 +108,21 @@ with st.sidebar:
     horizon_days   = st.slider("Proqnoz üfüqü (gün)", 3, 20, 5, 1)
     ml_model_type  = st.selectbox("ML model növü", ["xgb", "rf"], index=0)
     max_pos_pct    = st.number_input("Max alət payı", value=0.25, step=0.05, format="%.2f")
+    # ─────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("🔔 Real-time & Alerts")
+
+    auto_refresh = st.checkbox("Auto refresh", value=False, help="Paneli periodik yenilə")
+    refresh_sec  = st.number_input("Refresh interval (s)", min_value=5, max_value=600, value=30, step=5)
+
+    enable_tg_alerts = st.checkbox("Telegram Alerts aktiv", value=False)
+    alert_prob_th    = st.slider("Prob↑ həd (ML)", 50, 90, 65, 1)          # ML ehtimal %
+    alert_er_th      = st.slider("ExpRet həd (%, ML)", 0.0, 10.0, 1.0, 0.1) # ML gözlənilən gəlir %
+    alert_score_th   = st.slider("Tech Score həd (0..100)", 0, 100, 60, 1)  # Sənin 'Score' sütunun
+
+    ai_explain_alert = st.checkbox("AI şərhi ilə birlikdə göndər", value=True)
+    alert_cooldown_m = st.number_input("Cooldown (dəq)", 1, 120, 15, 1,
+                                       help="Eyni simvol üçün nə qədər tez-tez xəbərdarlıq göndərilsin")
 
 # ================== MAIN: LIVE SIGNALS ==================
 st.markdown("## 🔎 Live Signals")
